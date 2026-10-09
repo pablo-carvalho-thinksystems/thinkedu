@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "thinkEdu",
+    "slug": "thinkedu",
+    "version": "0.1.0",
+    "scheme": "thinkedu",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.thinksystems.thinkedu"
+    },
+    "android": { "package": "com.thinksystems.thinkedu" },
+    "web": { "bundler": "metro", "name": "thinkEdu · ThinkSystems" }
+  }
+}

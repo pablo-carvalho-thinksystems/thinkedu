@@ -1,0 +1,24 @@
+{
+  "name": "thinkedu",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/mobile",
+    "apps/admin"
+  ],
+  "scripts": {
+    "dev:mobile": "npm run start --workspace @thinkedu/mobile",
+    "dev:web": "npm run web --workspace @thinkedu/mobile",
+    "dev:admin": "npm run dev --workspace @thinkedu/admin",
+    "dev:api": "node --env-file-if-exists=.env apps/api/start.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "typecheck": "npm run typecheck --workspace @thinkedu/mobile && npm run typecheck --workspace @thinkedu/admin",
+    "build": "npm run build --workspace @thinkedu/admin && npm run export:web --workspace @thinkedu/mobile"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.9"
+  }
+}
