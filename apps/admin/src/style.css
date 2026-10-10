@@ -1297,10 +1297,10 @@ legend {
   gap: 18px;
   padding: 18px 22px;
   margin-bottom: 26px;
-  border: 1px solid #ccd6ff;
+  border: 1px solid #e6c77f;
   border-radius: 18px;
-  background: linear-gradient(110deg, #edf1ff, #f8f9ff);
-  box-shadow: 0 4px 16px #304cff06;
+  background: linear-gradient(110deg, #fff0c9, #fffaf0);
+  box-shadow: 0 4px 16px #a66b0b0c;
 }
 .unitContextIcon {
   display: grid;
@@ -1308,7 +1308,7 @@ legend {
   flex: 0 0 44px;
   height: 44px;
   border-radius: 13px;
-  background: #304cff;
+  background: #a96612;
   color: white;
   font-size: 30px;
 }
@@ -1320,7 +1320,7 @@ legend {
   min-width: 0;
   flex: 1;
 }
-.unitCaption { font-size: 9px; font-weight: 700; letter-spacing: 1.3px; color: #5265aa; }
+.unitCaption { font-size: 9px; font-weight: 700; letter-spacing: 1.3px; color: #80500b; }
 .unitFilter select {
   width: 100%;
   max-width: 380px;
@@ -1328,17 +1328,17 @@ legend {
   font-size: 17px;
   font-weight: 600;
   padding: 8px 12px;
-  border: 1px solid #c6d0f7;
+  border: 1px solid #d6ac55;
   border-radius: 10px;
   background: white;
-  color: var(--ink);
+  color: #60400f;
   cursor: pointer;
 }
-.unitFilter select:focus-visible { outline: 3px solid #304cff40; outline-offset: 3px; }
+.unitFilter select:focus-visible { outline: 3px solid #a9661240; outline-offset: 3px; }
 .unitContextSummary { display: flex; flex-direction: column; gap: 7px; max-width: 42%; }
-.unitContextSummary strong { font-size: 13px; color: #31488c; }
-.unitContextSummary strong span { padding: 0 5px; color: #95a3cc; }
-.unitContextSummary > span { font-size: 11px; color: #6c789b; line-height: 1.5; overflow-wrap: anywhere; }
+.unitContextSummary strong { font-size: 13px; color: #725013; }
+.unitContextSummary strong span { padding: 0 5px; color: #b5904d; }
+.unitContextSummary > span { font-size: 11px; color: #806c48; line-height: 1.5; overflow-wrap: anywhere; }
 @media (max-width: 700px) {
   .unitContext { flex-wrap: wrap; gap: 12px; padding: 16px; }
   .unitContextSummary { max-width: 100%; width: 100%; padding-left: 56px; }
