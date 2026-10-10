@@ -778,25 +778,6 @@ function App() {
           <span>
             Gestão escolar <b>/</b> {page}
           </span>
-          <label className="unitFilter">
-            Unidade
-            <select
-              aria-label="Filtrar unidade"
-              value={unitId}
-              onChange={(e) => {
-                setUnit(e.target.value);
-                setClass("all");
-                setSearch("");
-              }}
-            >
-              <option value="all">Todas as unidades autorizadas</option>
-              {authorized.units.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-          </label>
           <label className="demoProfile">
             Perfil de demonstração
             <select
@@ -824,6 +805,37 @@ function App() {
           </span>
         </div>
         <main>
+          <section className="unitContext" aria-label="Contexto da unidade">
+            <span className="unitContextIcon" aria-hidden="true">⌂</span>
+          <label className="unitFilter">
+            <span className="unitCaption">UNIDADE EM VISUALIZAÇÃO</span>
+            <select
+              aria-label="Filtrar unidade"
+              value={unitId}
+              onChange={(e) => {
+                setUnit(e.target.value);
+                setClass("all");
+                setSearch("");
+              }}
+            >
+              <option value="all">Todas as unidades</option>
+              {authorized.units.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+          </label>
+            <div className="unitContextSummary">
+              <strong>{shown.classes.length} turmas <span>·</span> {shown.children.length} alunos</strong>
+              <span>{unitId === "all"
+                ? `${authorized.units.length} unidades autorizadas · visão conjunta`
+                : (() => {
+                    const unit = authorized.units.find((u) => u.id === unitId);
+                    return unit ? `${unit.address.street}, ${unit.address.number} · ${unit.address.neighborhood}, ${unit.address.city}` : "";
+                  })()}</span>
+            </div>
+          </section>
           <header>
             <div>
               <span className="eyebrow">ESCOLA SEMENTE · ANO LETIVO 2026</span>
