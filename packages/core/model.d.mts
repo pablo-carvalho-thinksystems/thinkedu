@@ -77,6 +77,24 @@ export interface AuditEntry {
   at: string;
   subject: string | null;
 }
+export interface Attachment {
+  name: string;
+  uri: string;
+  mimeType: string;
+}
+export interface MuralPost {
+  id: string;
+  title: string;
+  body: string;
+  kind: string;
+  attachment: Attachment | null;
+  childIds: string[];
+  authorId: string;
+  createdAt: string;
+}
+export function upgradeStore<T extends { posts?: MuralPost[] }>(
+  state: T,
+): T & { posts: MuralPost[] };
 export interface Store {
   version: number;
   school: { id: string; name: string };
@@ -87,6 +105,7 @@ export interface Store {
   messages: Message[];
   invoices: Invoice[];
   events: SchoolEvent[];
+  posts: MuralPost[];
   audit: AuditEntry[];
 }
 export interface VisibleStore extends Omit<Store, "actors"> {
@@ -103,5 +122,6 @@ export function applyCommand(
   command: Record<string, unknown>,
   now?: string,
   id?: () => string,
+  options?: { allowLocalMedia?: boolean },
 ): Store;
 export function calendarCells(year: number, month: number): (number | null)[];

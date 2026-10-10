@@ -82,9 +82,57 @@ test("API: sessão, isolamento, comandos e persistência entre perfis", async ()
       updated.messages.at(-1).body,
       "Mensagem de teste da educadora",
     );
+    assert.equal(
+      (
+        await request("/commands", family, {
+          type: "mural.create",
+          title: "Recado",
+          body: "Texto",
+          childIds: ["lia"],
+          kind: "text",
+        })
+      ).status,
+      403,
+    );
+    assert.equal(
+      (
+        await request("/commands", teacher, {
+          type: "mural.create",
+          title: "Material local",
+          body: "Arquivo",
+          childIds: ["lia"],
+          kind: "file",
+          attachment: {
+            name: "Teste.txt",
+            uri: "local:1791532800000-test.txt",
+          },
+        })
+      ).status,
+      400,
+    );
+    assert.equal(
+      (
+        await request("/commands", teacher, {
+          type: "mural.create",
+          title: "Mural de teste",
+          body: "Material para Bento",
+          childIds: ["bento"],
+          kind: "file",
+          attachment: {
+            name: "Teste.pdf",
+            uri: "https://example.com/test.pdf",
+          },
+        })
+      ).status,
+      200,
+    );
+    const wall = await (await request("/state", family)).json();
+    assert.equal(wall.posts[0].title, "Mural de teste");
+    assert.deepEqual(wall.posts[0].childIds, ["bento"]);
     const saved = JSON.parse(await readFile(join(dir, "demo.json"), "utf8"));
     assert.equal(saved.messages.at(-1).body, "Mensagem de teste da educadora");
-    assert.equal(saved.audit.at(-1).type, "message.send");
+    assert.equal(saved.audit.at(-1).type, "mural.create");
+    assert.equal(saved.posts[0].title, "Mural de teste");
   } finally {
     child.kill();
     await new Promise((resolve) => child.once("exit", resolve));

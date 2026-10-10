@@ -10,7 +10,13 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.thinksystems.thinkedu"
     },
-    "android": { "package": "com.thinksystems.thinkedu" },
-    "web": { "bundler": "metro", "name": "thinkEdu · ThinkSystems" }
+    "android": {
+      "package": "com.thinksystems.thinkedu"
+    },
+    "web": {
+      "bundler": "metro",
+      "name": "thinkEdu · ThinkSystems"
+    },
+    "plugins": ["expo-sharing", "expo-video"]
   }
 }

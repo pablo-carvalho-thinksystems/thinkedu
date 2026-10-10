@@ -1,3 +1,4 @@
+import { seedPosts, validateAttachment } from "./mural.mjs";
 export const DEMO_DATE = "2026-10-09";
 export const money = (value) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
@@ -199,6 +200,7 @@ export function createSeed() {
         tone: "sky",
       },
     ],
+    posts: seedPosts(),
     audit: [],
   };
 }
@@ -212,7 +214,27 @@ export function accessibleChildren(state, actor) {
         : actor.classIds.includes(c.classId)),
   );
 }
+export function upgradeStore(state) {
+  return {
+    ...state,
+    posts: (state.posts ?? seedPosts()).map((post) =>
+      post.id === "m-video" &&
+      post.attachment?.uri ===
+        "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+        ? {
+            ...post,
+            attachment: {
+              ...post.attachment,
+              name: "Vídeo de demonstração · thinkEdu",
+              uri: "demo:school-video",
+            },
+          }
+        : post,
+    ),
+  };
+}
 export function visibleState(state, actor) {
+  state = upgradeStore(state);
   const children = accessibleChildren(state, actor),
     ids = new Set(children.map((c) => c.id));
   const { audit, actors, ...rest } = state;
@@ -229,6 +251,9 @@ export function visibleState(state, actor) {
         childIds: n.childIds.filter((id) => ids.has(id)),
         responses: n.responses.filter((r) => ids.has(r.childId)),
       })),
+    posts: state.posts
+      .filter((p) => p.childIds.some((id) => ids.has(id)))
+      .map((p) => ({ ...p, childIds: p.childIds.filter((id) => ids.has(id)) })),
     messages: state.messages.filter((m) => ids.has(m.childId)),
     events: state.events
       .filter((e) => e.childIds.some((id) => ids.has(id)))
@@ -271,6 +296,7 @@ export function applyCommand(
   command,
   now = new Date().toISOString(),
   id = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  options = {},
 ) {
   if (
     !state.actors.some((a) => a.id === actor.id) ||
@@ -285,9 +311,36 @@ export function applyCommand(
     if (!["teacher", "admin"].includes(actor.role))
       fail("Somente a equipe pode executar esta ação.", 403);
   };
-  const next = structuredClone(state),
+  const next = structuredClone(upgradeStore(state)),
     type = command?.type;
-  if (type === "message.send") {
+  if (type === "mural.create") {
+    teacher();
+    if (!Array.isArray(command.childIds) || !command.childIds.length)
+      fail("Selecione os destinatários.");
+    command.childIds.forEach(requireChild);
+    if (!["text", "video", "file"].includes(command.kind))
+      fail("Tipo de material inválido.");
+    let attachment;
+    try {
+      attachment = validateAttachment(
+        command.attachment,
+        command.kind,
+        options.allowLocalMedia === true,
+      );
+    } catch (error) {
+      fail(error.message);
+    }
+    next.posts.unshift({
+      id: id(),
+      title: text(command.title, 160),
+      body: text(command.body, 6000),
+      kind: command.kind,
+      attachment,
+      childIds: [...new Set(command.childIds)],
+      authorId: actor.id,
+      createdAt: now,
+    });
+  } else if (type === "message.send") {
     requireChild(command.childId);
     next.messages.push({
       id: id(),

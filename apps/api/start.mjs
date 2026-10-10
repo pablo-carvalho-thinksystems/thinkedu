@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import {
   createSeed,
+  upgradeStore,
   visibleState,
   applyCommand,
 } from "../../packages/core/model.mjs";
@@ -15,7 +16,7 @@ const path =
   fileURLToPath(new URL("./data/demo.json", import.meta.url));
 let state = createSeed();
 try {
-  state = JSON.parse(await readFile(path, "utf8"));
+  state = upgradeStore(JSON.parse(await readFile(path, "utf8")));
 } catch (error) {
   if (error.code !== "ENOENT") throw error;
 }

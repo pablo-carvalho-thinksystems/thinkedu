@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  Linking,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -24,6 +25,15 @@ import { PlusJakartaSans_800ExtraBold } from "@expo-google-fonts/plus-jakarta-sa
 import { colors as C, typography as T } from "../../packages/core/theme.mjs";
 import { calendarCells, DEMO_DATE, money } from "../../packages/core/model.mjs";
 import { consolidateInvoices } from "../../packages/core/billing.mjs";
+import {
+  eventsForChild,
+  validateAttachment,
+} from "../../packages/core/mural.mjs";
+import type { Attachment } from "../../packages/core/model.mjs";
+import * as DocumentPicker from "expo-document-picker";
+import { Directory, File, Paths } from "expo-file-system";
+import * as Sharing from "expo-sharing";
+import { useVideoPlayer, VideoView } from "expo-video";
 import { Child, useSchool } from "./src/session";
 
 type IconName = React.ComponentProps<typeof Feather>["name"];
@@ -43,7 +53,10 @@ type Page =
   | "chat"
   | "compose"
   | "materials"
-  | "event";
+  | "event"
+  | "mural"
+  | "muralPost"
+  | "muralCompose";
 const photo = require("./assets/atelier.png");
 const childPhotos: Record<
   string,
@@ -68,6 +81,40 @@ const monthLabel = (year: number, month: number) =>
     month: "long",
     year: "numeric",
   });
+const mediaUri = (uri: string) =>
+  uri.startsWith("local:")
+    ? new File(Paths.document, "thinkedu-mural", uri.slice(6)).uri
+    : uri;
+function MuralVideo({ uri }: { uri: string }) {
+  const player = useVideoPlayer(
+    uri === "demo:school-video"
+      ? require("./assets/mural-demo.mp4")
+      : mediaUri(uri),
+  );
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const subscription = player.addListener("statusChange", (event) =>
+      setFailed(event.status === "error"),
+    );
+    return () => subscription.remove();
+  }, [player]);
+  return (
+    <View style={{ gap: 10 }}>
+      <VideoView
+        player={player}
+        nativeControls
+        fullscreenOptions={{ enable: true }}
+        style={{ height: 220, borderRadius: 20, backgroundColor: C.ink }}
+      />
+      {failed && (
+        <Copy color={C.orange}>
+          Não foi possível carregar o vídeo. Confira a conexão ou o link com a
+          escola.
+        </Copy>
+      )}
+    </View>
+  );
+}
 function Copy({
   children,
   size = 14,
@@ -356,6 +403,12 @@ function SchoolApp() {
   const [noticeId, setNoticeId] = useState("n-passeio"),
     [invoiceId, setInvoiceId] = useState("family-open");
   const [showComposition, setShowComposition] = useState(false);
+  const [postId, setPostId] = useState("m-boas-vindas"),
+    [wallKind, setWallKind] = useState("text"),
+    [wallUrl, setWallUrl] = useState(""),
+    [wallFile, setWallFile] = useState<Attachment | null>(null),
+    [wallReview, setWallReview] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [filter, setFilter] = useState("all"),
     [chatId, setChatId] = useState("lia");
   const [message, setMessage] = useState(""),
@@ -383,6 +436,19 @@ function SchoolApp() {
   const children = data.children as Child[],
     selected = children.find((c) => c.id === childId),
     scope = selected ? [selected] : children;
+  const agendaEvents = family
+    ? eventsForChild(data.events, currentAgendaId())
+    : data.events.filter((e) =>
+        e.childIds.some((id) => scope.some((c) => c.id === id)),
+      );
+  function currentAgendaId() {
+    return selected?.id || children[0]?.id;
+  }
+  const agendaChild = children.find((c) => c.id === currentAgendaId());
+  const posts = data.posts.filter((p) =>
+    p.childIds.some((id) => scope.some((c) => c.id === id)),
+  );
+  const post = data.posts.find((p) => p.id === postId);
   const routine = data.routines.find(
     (r) => r.childId === (selected?.id || scope[0]?.id) && r.date === dayDate,
   );
@@ -422,6 +488,84 @@ function SchoolApp() {
     if (Platform.OS === "web" && typeof document !== "undefined")
       document.title = "thinkEdu · ThinkSystems";
   }, []);
+  function newPost() {
+    setTitle("");
+    setBody("");
+    setWallKind("text");
+    setWallUrl("");
+    setWallFile(null);
+    setWallReview(false);
+    setRecipients(scope.map((c) => c.id));
+    go("muralCompose");
+  }
+  async function pickMaterial() {
+    if (picking) return;
+    setPicking(true);
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type:
+          wallKind === "video"
+            ? "video/*"
+            : [
+                "application/pdf",
+                "image/*",
+                "text/plain",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+              ],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      if ((asset.size ?? 0) > 100 * 1024 * 1024)
+        throw new Error("Escolha um arquivo de até 100 MB.");
+      const directory = new Directory(Paths.document, "thinkedu-mural");
+      directory.create({ idempotent: true, intermediates: true });
+      const safeName = `${Date.now()}-${asset.name.replace(/[^a-zA-Z0-9_.-]/g, "_")}`;
+      const destination = new File(directory, safeName);
+      new File(asset.uri).copy(destination);
+      setWallFile({
+        name: asset.name,
+        uri: `local:${safeName}`,
+        mimeType: asset.mimeType || "application/octet-stream",
+      });
+      setWallUrl("");
+    } catch (e) {
+      setDialog({
+        title: "Arquivo não anexado",
+        body: e instanceof Error ? e.message : "Tente novamente.",
+      });
+    } finally {
+      setPicking(false);
+    }
+  }
+  function wallAttachment() {
+    return (
+      wallFile || {
+        name: title.trim(),
+        uri: wallUrl.trim(),
+        mimeType:
+          wallKind === "video" ? "video/mp4" : "application/octet-stream",
+      }
+    );
+  }
+  async function openMaterial(attachment: Attachment) {
+    try {
+      if (attachment.uri.startsWith("local:")) {
+        if (!(await Sharing.isAvailableAsync()))
+          throw new Error(
+            "Não foi possível abrir o compartilhamento neste dispositivo.",
+          );
+        await Sharing.shareAsync(mediaUri(attachment.uri), {
+          mimeType: attachment.mimeType,
+        });
+      } else await Linking.openURL(attachment.uri);
+    } catch (e) {
+      setDialog({
+        title: "Não foi possível abrir",
+        body: e instanceof Error ? e.message : "Confira sua conexão.",
+      });
+    }
+  }
   function go(next: Page) {
     setHistory((h) => [...h, page]);
     setPage(next);
@@ -606,6 +750,12 @@ function SchoolApp() {
                 O dia de {scope.map((c) => c.name).join(" e ")} em um só lugar.
               </Copy>
             </Card>
+            <Row
+              title="Mural da escola"
+              sub="Recados, vídeos e materiais para a família"
+              icon="book-open"
+              onPress={() => go("mural")}
+            />
             {scope.map((c) => (
               <Pressable
                 accessibilityRole="button"
@@ -824,6 +974,12 @@ function SchoolApp() {
         return (
           <>
             <Heading>A escola,{"\n"}mais perto.</Heading>
+            <Row
+              title="Mural da escola"
+              sub="Descobertas e materiais compartilhados"
+              icon="book-open"
+              onPress={() => go("mural")}
+            />
             {selector}
             <Chips
               items={[
@@ -1240,11 +1396,441 @@ function SchoolApp() {
             <Copy>Nenhuma cobrança disponível.</Copy>
           </Card>
         );
+      case "mural":
+        return (
+          <>
+            <Heading>Mural da escola.</Heading>
+            <Card tone="blue">
+              <View style={s.row}>
+                <View style={{ flex: 1 }}>
+                  <Copy bold size={24} color={C.white}>
+                    Aprender também{"\n"}acontece em casa.
+                  </Copy>
+                  <Copy color={C.white} size={12}>
+                    Recados, histórias e materiais da Escola Semente.
+                  </Copy>
+                </View>
+                <Flower color={C.lime} />
+              </View>
+            </Card>
+            {selector}
+            {!family && (
+              <Button icon="plus" onPress={newPost}>
+                Publicar no mural
+              </Button>
+            )}
+            <View style={{ marginVertical: 18 }}>
+              <Chips
+                items={[
+                  { id: "all", label: "Tudo" },
+                  { id: "text", label: "Recados" },
+                  { id: "video", label: "Vídeos" },
+                  { id: "file", label: "Arquivos" },
+                ]}
+                value={filter}
+                onChange={setFilter}
+              />
+            </View>
+            {posts
+              .filter((p) => filter === "all" || p.kind === filter)
+              .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+              .map((p) => (
+                <Pressable
+                  key={p.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Abrir ${p.title}`}
+                  onPress={() => {
+                    setPostId(p.id);
+                    go("muralPost");
+                  }}
+                >
+                  <Card
+                    tone={
+                      p.kind === "video"
+                        ? "sky"
+                        : p.kind === "file"
+                          ? "peach"
+                          : "lime"
+                    }
+                  >
+                    <View style={s.row}>
+                      <View style={s.iconBox}>
+                        <Icon
+                          name={
+                            p.kind === "video"
+                              ? "play"
+                              : p.kind === "file"
+                                ? "paperclip"
+                                : "align-left"
+                          }
+                          color={C.blue}
+                        />
+                      </View>
+                      <Copy bold size={11}>
+                        {p.kind === "video"
+                          ? "VÍDEO"
+                          : p.kind === "file"
+                            ? "MATERIAL"
+                            : "RECADO"}{" "}
+                        · {dateLabel(p.createdAt.slice(0, 10))}
+                      </Copy>
+                    </View>
+                    <Copy bold size={21}>
+                      {p.title}
+                    </Copy>
+                    <Copy size={13}>
+                      {p.body.length > 150
+                        ? `${p.body.slice(0, 150)}…`
+                        : p.body}
+                    </Copy>
+                    <Copy size={11} color={C.muted}>
+                      {[
+                        ...new Set(
+                          p.childIds.map(
+                            (id) => children.find((c) => c.id === id)?.group,
+                          ),
+                        ),
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </Copy>
+                    <View style={[s.row, { justifyContent: "space-between" }]}>
+                      <Copy bold size={12} color={C.blue}>
+                        {p.kind === "video"
+                          ? "Assistir ao vídeo"
+                          : p.kind === "file"
+                            ? "Ver material"
+                            : "Ler recado"}
+                      </Copy>
+                      <Icon name="arrow-up-right" color={C.blue} />
+                    </View>
+                  </Card>
+                </Pressable>
+              ))}
+            {!posts.some((p) => filter === "all" || p.kind === filter) && (
+              <Card>
+                <Copy>
+                  Nenhum material para esta seleção. As novas publicações da
+                  escola aparecerão aqui.
+                </Copy>
+              </Card>
+            )}
+          </>
+        );
+      case "muralPost":
+        return post ? (
+          <>
+            <Copy bold size={11} color={C.blue}>
+              MURAL DA ESCOLA · {dateLabel(post.createdAt.slice(0, 10))}
+            </Copy>
+            <Heading>{post.title}</Heading>
+            <Copy size={12} color={C.muted} style={{ marginBottom: 18 }}>
+              Por{" "}
+              {data.actors.find((a) => a.id === post.authorId)?.name ||
+                "Equipe da escola"}{" "}
+              ·{" "}
+              {post.childIds
+                .map((id) => children.find((c) => c.id === id)?.name)
+                .filter(Boolean)
+                .join(" e ")}
+            </Copy>
+            {post.kind === "video" && post.attachment && (
+              <MuralVideo key={post.id} uri={post.attachment.uri} />
+            )}
+            <Card tone="sky" style={{ marginTop: 18 }}>
+              <Copy size={15}>{post.body}</Copy>
+            </Card>
+            {post.kind === "file" && post.attachment && (
+              <Card tone="peach">
+                <View style={s.row}>
+                  <Icon name="file-text" color={C.blue} />
+                  <Copy bold style={{ flex: 1 }}>
+                    {post.attachment.name}
+                  </Copy>
+                </View>
+                <Button
+                  icon="external-link"
+                  onPress={() => openMaterial(post.attachment!)}
+                >
+                  Abrir arquivo
+                </Button>
+              </Card>
+            )}
+            {post.attachment?.uri.startsWith("local:") && (
+              <Copy size={11} color={C.muted}>
+                Arquivo da demonstração salvo neste dispositivo.
+              </Copy>
+            )}
+            <Button outline onPress={() => back()}>
+              Voltar ao mural
+            </Button>
+          </>
+        ) : (
+          <Copy>Esta publicação não está disponível para o seu perfil.</Copy>
+        );
+      case "muralCompose":
+        return (
+          <>
+            <Heading>
+              {wallReview
+                ? "Tudo pronto para compartilhar?"
+                : "Algo bom para compartilhar."}
+            </Heading>
+            {wallReview ? (
+              <>
+                <Card tone="sky">
+                  <Copy bold size={21}>
+                    {title}
+                  </Copy>
+                  <Copy>{body}</Copy>
+                  {wallKind !== "text" && (
+                    <Copy size={12}>{wallFile?.name || wallUrl}</Copy>
+                  )}
+                  <Copy bold size={12}>
+                    Para:{" "}
+                    {recipients
+                      .map((id) => children.find((c) => c.id === id)?.name)
+                      .join(" · ")}
+                  </Copy>
+                </Card>
+                <Button
+                  disabled={busy}
+                  onPress={async () => {
+                    if (
+                      await dispatch({
+                        type: "mural.create",
+                        title,
+                        body,
+                        kind: wallKind,
+                        attachment:
+                          wallKind === "text" ? null : wallAttachment(),
+                        childIds: recipients,
+                      })
+                    ) {
+                      setWallReview(false);
+                      tab("mural");
+                      setDialog({
+                        title: "Publicado no mural",
+                        body: "O material já está disponível para os responsáveis selecionados.",
+                      });
+                    }
+                  }}
+                >
+                  Publicar material
+                </Button>
+                <Button outline onPress={() => setWallReview(false)}>
+                  Continuar editando
+                </Button>
+              </>
+            ) : (
+              <>
+                <Copy bold size={12}>
+                  Quem vai receber?
+                </Copy>
+                {[...new Set(children.map((c) => c.classId))].map((classId) => {
+                  const group = children.filter((c) => c.classId === classId);
+                  const checked = group.every((c) => recipients.includes(c.id));
+                  return (
+                    <Row
+                      key={classId}
+                      title={group[0].group}
+                      sub={
+                        checked
+                          ? "Turma selecionada"
+                          : "Selecionar turma inteira"
+                      }
+                      icon={checked ? "check-square" : "square"}
+                      onPress={() =>
+                        setRecipients((r) =>
+                          checked
+                            ? r.filter((id) => !group.some((c) => c.id === id))
+                            : [...new Set([...r, ...group.map((c) => c.id)])],
+                        )
+                      }
+                    />
+                  );
+                })}
+                <View style={{ gap: 8, marginBottom: 18 }}>
+                  {children.map((c) => (
+                    <Pressable
+                      key={c.id}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{
+                        checked: recipients.includes(c.id),
+                      }}
+                      onPress={() =>
+                        setRecipients((r) =>
+                          r.includes(c.id)
+                            ? r.filter((id) => id !== c.id)
+                            : [...r, c.id],
+                        )
+                      }
+                      style={[s.row, s.recipient]}
+                    >
+                      <Icon
+                        name={
+                          recipients.includes(c.id) ? "check-square" : "square"
+                        }
+                        color={C.blue}
+                      />
+                      <ChildTag child={c} />
+                    </Pressable>
+                  ))}
+                </View>
+                <Chips
+                  items={[
+                    { id: "text", label: "Texto" },
+                    { id: "video", label: "Vídeo" },
+                    { id: "file", label: "Arquivo" },
+                  ]}
+                  value={wallKind}
+                  onChange={(v) => {
+                    setWallKind(v);
+                    setWallFile(null);
+                    setWallUrl("");
+                  }}
+                />
+                <View style={{ gap: 16, marginVertical: 20 }}>
+                  <Field
+                    label="Título do material"
+                    value={title}
+                    onChange={setTitle}
+                    placeholder="Uma descoberta para compartilhar"
+                  />
+                  <Field
+                    label="Texto do mural"
+                    value={body}
+                    onChange={setBody}
+                    multiline
+                    placeholder="Escreva seu recado ou uma descrição do material"
+                  />
+                  {wallKind !== "text" && (
+                    <>
+                      {!school.connected && Platform.OS !== "web" && (
+                        <Button
+                          outline
+                          icon="paperclip"
+                          disabled={picking}
+                          onPress={pickMaterial}
+                        >
+                          {picking ? "Anexando…" : "Escolher no dispositivo"}
+                        </Button>
+                      )}
+                      {wallFile ? (
+                        <Card tone="peach">
+                          <Copy bold>{wallFile.name}</Copy>
+                          <Copy size={11}>
+                            Salvo no dispositivo para esta demonstração.
+                          </Copy>
+                          <Button outline onPress={() => setWallFile(null)}>
+                            Remover anexo
+                          </Button>
+                        </Card>
+                      ) : (
+                        <Field
+                          label={
+                            wallKind === "video"
+                              ? "Link HTTPS direto do vídeo (MP4, MOV ou WebM)"
+                              : "Link HTTPS do arquivo"
+                          }
+                          value={wallUrl}
+                          onChange={setWallUrl}
+                          placeholder="https://…"
+                        />
+                      )}
+                      <Copy size={11} color={C.muted}>
+                        {school.connected || Platform.OS === "web"
+                          ? "Use um link de material já hospedado pela escola."
+                          : "Anexos do dispositivo ficam nesta demonstração. Para acesso entre dispositivos, use um link HTTPS hospedado pela escola."}
+                      </Copy>
+                    </>
+                  )}
+                </View>
+                <Button
+                  disabled={
+                    busy ||
+                    picking ||
+                    !title.trim() ||
+                    !body.trim() ||
+                    !recipients.length
+                  }
+                  onPress={() => {
+                    try {
+                      validateAttachment(
+                        wallAttachment(),
+                        wallKind,
+                        !school.connected && Platform.OS !== "web",
+                      );
+                      setWallReview(true);
+                    } catch (e) {
+                      setDialog({
+                        title: "Confira o material",
+                        body:
+                          e instanceof Error ? e.message : "Anexo inválido.",
+                      });
+                    }
+                  }}
+                >
+                  Revisar publicação
+                </Button>
+              </>
+            )}
+          </>
+        );
       case "calendar":
         return (
           <>
             <Heading>Organize os{"\n"}próximos dias.</Heading>
-            {selector}
+            {family ? (
+              <>
+                <Copy color={C.muted} style={{ marginBottom: 12 }}>
+                  Cada criança tem a sua agenda e a sua turma.
+                </Copy>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 10, paddingBottom: 20 }}
+                >
+                  {children.map((c) => (
+                    <Pressable
+                      key={c.id}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Agenda de ${c.name}, ${c.group}`}
+                      accessibilityState={{
+                        selected: agendaChild?.id === c.id,
+                      }}
+                      onPress={() => setChildId(c.id)}
+                      style={[
+                        s.row,
+                        {
+                          padding: 12,
+                          borderRadius: 22,
+                          borderWidth: 2,
+                          borderColor:
+                            agendaChild?.id === c.id ? C.blue : C.sky,
+                          backgroundColor: C.white,
+                        },
+                      ]}
+                    >
+                      <Avatar child={c} size={42} />
+                      <View>
+                        <Copy
+                          bold
+                          color={agendaChild?.id === c.id ? C.blue : C.ink}
+                        >
+                          {c.name}
+                        </Copy>
+                        <Copy size={11} color={C.muted}>
+                          {c.group}
+                        </Copy>
+                      </View>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </>
+            ) : (
+              selector
+            )}
             <View
               style={[
                 s.row,
@@ -1281,11 +1867,7 @@ function SchoolApp() {
                 const date = d
                   ? `${calendar.year}-${String(calendar.month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`
                   : "";
-                const event = data.events.some(
-                  (e) =>
-                    e.date === date &&
-                    e.childIds.some((id) => scope.some((c) => c.id === id)),
-                );
+                const event = agendaEvents.some((e) => e.date === date);
                 return (
                   <View key={i} style={s.calendarCell}>
                     <View
@@ -1302,21 +1884,22 @@ function SchoolApp() {
                 );
               })}
             </View>
-            {data.events
-              .filter(
-                (e) =>
-                  e.date.startsWith(
-                    `${calendar.year}-${String(calendar.month + 1).padStart(2, "0")}`,
-                  ) && e.childIds.some((id) => scope.some((c) => c.id === id)),
+            {agendaEvents
+              .filter((e) =>
+                e.date.startsWith(
+                  `${calendar.year}-${String(calendar.month + 1).padStart(2, "0")}`,
+                ),
               )
               .sort((a, b) => a.date.localeCompare(b.date))
               .map((e) => (
                 <Card key={e.id} tone={e.tone === "lime" ? "lime" : "sky"}>
                   <Copy bold size={11}>
-                    {e.childIds
-                      .map((id) => children.find((c) => c.id === id)?.name)
-                      .filter(Boolean)
-                      .join(" · ")}
+                    {family
+                      ? `${agendaChild?.name} · ${agendaChild?.group}`
+                      : e.childIds
+                          .map((id) => children.find((c) => c.id === id)?.name)
+                          .filter(Boolean)
+                          .join(" · ")}
                   </Copy>
                   <Copy bold size={18}>
                     {e.title}
@@ -1401,6 +1984,12 @@ function SchoolApp() {
         return (
           <>
             <Heading>Bom dia, {actor.name}!</Heading>
+            <Row
+              title="Mural da escola"
+              sub="Compartilhe textos, vídeos e arquivos"
+              icon="book-open"
+              onPress={() => go("mural")}
+            />
             {selector}
             <View style={[s.row, { marginBottom: 16 }]}>
               <Card tone="sky" style={{ flex: 1, marginBottom: 0 }}>
@@ -1910,10 +2499,16 @@ function SchoolApp() {
             active: ["calendar", "notice"].includes(page),
           },
           {
-            label: "Conversas",
-            icon: "message-circle",
+            label: "Escola",
+            icon: "book-open",
             page: "notices",
-            active: ["notices", "chat"].includes(page),
+            active: [
+              "notices",
+              "chat",
+              "mural",
+              "muralPost",
+              "muralCompose",
+            ].includes(page),
           },
           {
             label: "Perfil",
@@ -1927,7 +2522,13 @@ function SchoolApp() {
             label: "Turma",
             icon: "users",
             page: "classroom",
-            active: ["classroom", "routine"].includes(page),
+            active: [
+              "classroom",
+              "routine",
+              "mural",
+              "muralPost",
+              "muralCompose",
+            ].includes(page),
           },
           {
             label: "Mensagens",

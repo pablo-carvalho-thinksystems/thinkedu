@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   createSeed,
+  upgradeStore,
   visibleState,
   applyCommand,
 } from "../../../packages/core/model.mjs";
@@ -45,7 +46,7 @@ export function useSchool() {
           if (!active) return;
           token.current = session.token;
           const data = await request("/state");
-          if (active) setStore(data);
+          if (active) setStore(upgradeStore(data));
         } else {
           const saved = await AsyncStorage.getItem(KEY);
           if (saved && active) {
@@ -55,7 +56,7 @@ export function useSchool() {
               Array.isArray(data.children) &&
               Array.isArray(data.actors)
             )
-              setStore(data);
+              setStore(upgradeStore(data));
           }
         }
       } catch (e) {
@@ -79,7 +80,14 @@ export function useSchool() {
     try {
       const next = base
         ? await request("/commands", "POST", command)
-        : applyCommand(store, actor, command, "2026-10-09T15:00:00-03:00");
+        : applyCommand(
+            store,
+            actor,
+            command,
+            "2026-10-09T15:00:00-03:00",
+            undefined,
+            { allowLocalMedia: true },
+          );
       if (!base) await AsyncStorage.setItem(KEY, JSON.stringify(next));
       setStore(next);
       return true;
