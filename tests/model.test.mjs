@@ -157,7 +157,7 @@ test("responsável não pode publicar ou alterar rotina", () => {
   const state = createSeed();
   assert.throws(
     () => applyCommand(state, state.actors[0], { type: "routine.save" }, now),
-    /Somente a equipe/,
+    /permissão/,
   );
 });
 test("campos inválidos e datas inexistentes são rejeitados", () => {

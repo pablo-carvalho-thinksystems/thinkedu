@@ -56,6 +56,48 @@ test("API: sessão, isolamento, comandos e persistência entre perfis", async ()
       (await (await request("/demo/session", null, { actorId })).json()).token;
     const family = await login("rafael"),
       teacher = await login("ana");
+    const finance = await login("financeiro"),
+      secretary = await login("secretaria"),
+      coordination = await login("coordenacao"),
+      direction = await login("direcao");
+    const financeData = await (await request("/state", finance)).json();
+    assert.equal(financeData.invoices.length, 3);
+    assert.deepEqual(financeData.routines, []);
+    assert.deepEqual(financeData.messages, []);
+    assert.deepEqual(
+      (await (await request("/state", secretary)).json()).routines,
+      [],
+    );
+    assert.deepEqual(
+      (await (await request("/state", coordination)).json()).invoices,
+      [],
+    );
+    assert.equal(
+      (
+        await request("/commands", teacher, {
+          type: "user.create",
+          name: "Novo",
+          role: "director",
+          active: true,
+          classIds: [],
+        })
+      ).status,
+      403,
+    );
+    const changed = await request("/commands", direction, {
+      type: "user.update",
+      userId: "financeiro",
+      name: "Bruno",
+      role: "finance",
+      active: false,
+      classIds: [],
+    });
+    assert.equal(changed.status, 200);
+    assert.equal((await request("/state", finance)).status, 401);
+    assert.equal(
+      (await request("/demo/session", null, { actorId: "financeiro" })).status,
+      403,
+    );
     const data = await (await request("/state", family)).json();
     assert.deepEqual(
       data.children.map((c) => c.id),

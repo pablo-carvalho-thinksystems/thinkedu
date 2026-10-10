@@ -11,13 +11,19 @@ import {
   type Store,
   type VisibleStore,
   type Child,
+  type Actor,
 } from "../../../packages/core/model.mjs";
+import {
+  can,
+  roleLabels,
+  staffRoles,
+  rolePermissions,
+} from "../../../packages/core/permissions.mjs";
 import { consolidateInvoices } from "../../../packages/core/billing.mjs";
 import lia from "../../mobile/assets/lia-avatar.png";
 import bento from "../../mobile/assets/bento-avatar.png";
 import "./style.css";
 const seed = createSeed(),
-  actor = seed.actors.find((a) => a.id === "direcao")!,
   key = "thinkedu.admin.v1";
 const api = import.meta.env.VITE_API_URL?.replace(/\/$/, "");
 const pages = [
@@ -28,6 +34,17 @@ const pages = [
   "Calendário",
   "Financeiro",
   "Configurações",
+  "Usuários e acessos",
+];
+const pagePermissions = [
+  "routines.read",
+  "students.read",
+  "routines.read",
+  "communication.read",
+  "calendar.read",
+  "finance.read",
+  "users.manage",
+  "users.manage",
 ];
 function Icon({ name, size = 20 }: { name: string; size?: number }) {
   const paths: Record<string, string> = {
@@ -81,7 +98,32 @@ const dateLabel = (d: string) =>
     month: "long",
   });
 function App() {
+  const [actorId, setActorId] = useState("direcao"),
+    [sessionActor, setSessionActor] = useState<Actor>(
+      seed.actors.find((a) => a.id === "direcao")!,
+    ),
+    [profiles, setProfiles] = useState(
+      seed.actors.filter((a) => a.role !== "family"),
+    );
   const [data, setData] = useState<Store | VisibleStore>(() => {
+    if (api) {
+      const blank = createSeed();
+      for (const k of [
+        "children",
+        "actors",
+        "routines",
+        "attendance",
+        "activities",
+        "notices",
+        "messages",
+        "invoices",
+        "events",
+        "posts",
+        "audit",
+      ] as const)
+        (blank[k] as unknown[]) = [];
+      return blank;
+    }
     try {
       return upgradeStore(
         JSON.parse(localStorage.getItem(key) || "null") || createSeed(),
@@ -90,6 +132,19 @@ function App() {
       return createSeed();
     }
   });
+  const actor = api
+    ? (data as VisibleStore).currentActor || sessionActor
+    : (data as Store).actors.find((a) => a.id === actorId) || sessionActor;
+  const allowedPages = pages.filter((_, i) => can(actor, pagePermissions[i]));
+  useEffect(() => {
+    if (!allowedPages.includes(pageRef.current))
+      setPage(
+        can(actor, "finance.read") && !can(actor, "routines.read")
+          ? "Financeiro"
+          : allowedPages[0] || pages[0],
+      );
+  }, [actorId, actor.role, actor.active]);
+  const pageRef = useRef(pages[0]);
   const [page, setPage] = useState(pages[0]),
     [search, setSearch] = useState(""),
     [classId, setClass] = useState("all"),
@@ -106,20 +161,28 @@ function App() {
     [eventDay, setEventDay] = useState(""),
     [form, setForm] = useState<Record<string, string>>({}),
     [targets, setTargets] = useState("all");
+  pageRef.current = page;
   const lock = useRef(false),
     dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     if (!api) return;
     let active = true;
+    setConnected(false);
     (async () => {
       try {
         const r = await fetch(api + "/demo/session", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ actorId: actor.id }),
+          body: JSON.stringify({ actorId }),
         });
         if (!r.ok) throw Error("Não foi possível iniciar a sessão.");
         const session = await r.json();
+        const ps = await fetch(api + "/demo/profiles");
+        if (active && ps.ok)
+          setProfiles(
+            (await ps.json()).filter((a: Actor) => a.role !== "family"),
+          );
+        if (active) setSessionActor(session.actor);
         const s = await fetch(api + "/state", {
           headers: { Authorization: "Bearer " + session.token },
         });
@@ -137,7 +200,50 @@ function App() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [actorId]);
+  useEffect(() => {
+    if (!api || !token) return;
+    let active = true;
+    const refresh = () => {
+      void fetch(api + "/state", {
+        headers: { Authorization: "Bearer " + token },
+      })
+        .then(async (r) => {
+          if (!active) return;
+          if (r.status === 401) {
+            setConnected(false);
+            const blank = createSeed();
+            for (const k of [
+              "children",
+              "actors",
+              "routines",
+              "attendance",
+              "activities",
+              "notices",
+              "messages",
+              "invoices",
+              "events",
+              "posts",
+              "audit",
+            ] as const)
+              (blank[k] as unknown[]) = [];
+            setData({
+              ...blank,
+              currentActor: { ...sessionActor, active: false },
+            });
+            setError("Seu acesso foi desativado ou a sessão expirou.");
+            return;
+          }
+          if (r.ok) setData(await r.json());
+        })
+        .catch(() => {});
+    };
+    window.addEventListener("focus", refresh);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refresh);
+    };
+  }, [token, actorId]);
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(""), 4000);
@@ -150,6 +256,45 @@ function App() {
   const shown: VisibleStore = api
     ? (data as VisibleStore)
     : visibleState(data as Store, actor);
+  const currentProfiles = api
+    ? profiles
+    : (data as Store).actors.filter(
+        (a) => a.role !== "family" && a.active !== false,
+      );
+  function switchProfile(id: string) {
+    if (busy) return;
+    const next = currentProfiles.find((a) => a.id === id);
+    if (!next) return;
+    setActorId(id);
+    setSessionActor(next as Actor);
+    setModal("");
+    setError("");
+    setConnected(false);
+    setToken("");
+    setPage(
+      can(next, "finance.read") && !can(next, "routines.read")
+        ? pages[5]
+        : pages[0],
+    );
+    if (api) {
+      const blank = createSeed();
+      for (const field of [
+        "children",
+        "actors",
+        "routines",
+        "attendance",
+        "activities",
+        "notices",
+        "messages",
+        "invoices",
+        "events",
+        "posts",
+        "audit",
+      ] as const)
+        (blank[field] as unknown[]) = [];
+      setData({ ...blank, currentActor: next as Actor });
+    }
+  }
   const classes = [
     ...new Map(shown.children.map((c) => [c.classId, c.group])).entries(),
   ];
@@ -191,6 +336,8 @@ function App() {
       date,
       time: "09:00",
       kind: "update",
+      role: c ? "teacher" : "coordinator",
+      active: "true",
       status: "present",
       arrival: "08:00",
       departure: "17:00",
@@ -230,6 +377,13 @@ function App() {
         localStorage.setItem(key, JSON.stringify(next));
       }
       setData(next);
+      if (api)
+        void fetch(api + "/demo/profiles")
+          .then((r) => (r.ok ? r.json() : null))
+          .then((ps) => {
+            if (ps) setProfiles(ps.filter((a: Actor) => a.role !== "family"));
+          })
+          .catch(() => {});
       setModal("");
       setToast("Salvo. As informações foram atualizadas.");
     } catch (e) {
@@ -250,6 +404,15 @@ function App() {
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const common = { title: form.title, childIds: targetIds };
+    if (modal === "user")
+      void dispatch({
+        type: form.userId ? "user.update" : "user.create",
+        userId: form.userId,
+        name: form.name,
+        role: form.role,
+        active: form.active === "true",
+        classIds: (form.classes || "").split(",").filter(Boolean),
+      });
     if (modal === "enroll")
       void dispatch({
         type: "student.create",
@@ -381,24 +544,28 @@ function App() {
           </span>
         </button>
       </td>
-      <td>{status(c)}</td>
-      <td>{attendance.find((a) => a.childId === c.id)?.arrival || "—"}</td>
-      <td>
-        <span
-          className={
-            "badge " +
-            (routines.some((r) => r.childId === c.id && r.published)
-              ? "green"
-              : "orange")
-          }
-        >
-          {routines.some((r) => r.childId === c.id && r.published)
-            ? "Publicada"
-            : routines.some((r) => r.childId === c.id)
-              ? "Rascunho"
-              : "Pendente"}
-        </span>
-      </td>
+      {can(actor, "attendance.read") && <td>{status(c)}</td>}
+      {can(actor, "attendance.read") && (
+        <td>{attendance.find((a) => a.childId === c.id)?.arrival || "—"}</td>
+      )}
+      {can(actor, "routines.read") && (
+        <td>
+          <span
+            className={
+              "badge " +
+              (routines.some((r) => r.childId === c.id && r.published)
+                ? "green"
+                : "orange")
+            }
+          >
+            {routines.some((r) => r.childId === c.id && r.published)
+              ? "Publicada"
+              : routines.some((r) => r.childId === c.id)
+                ? "Rascunho"
+                : "Pendente"}
+          </span>
+        </td>
+      )}
       <td>
         <button
           className="iconButton"
@@ -427,29 +594,33 @@ function App() {
         </div>
         <small className="navLabel">SEU ESPAÇO DE GESTÃO</small>
         <nav>
-          {pages.map((p, i) => (
-            <button
-              key={p}
-              className={page === p ? "active" : ""}
-              onClick={() => go(p)}
-            >
-              <Icon
-                name={
-                  [
-                    "home",
-                    "people",
-                    "check",
-                    "message",
-                    "calendar",
-                    "money",
-                    "settings",
-                  ][i]
-                }
-              />
-              {p}
-              {page === p && <span className="navDot" />}
-            </button>
-          ))}
+          {pages.map(
+            (p, i) =>
+              can(actor, pagePermissions[i]) && (
+                <button
+                  key={p}
+                  className={page === p ? "active" : ""}
+                  onClick={() => go(p)}
+                >
+                  <Icon
+                    name={
+                      [
+                        "home",
+                        "people",
+                        "check",
+                        "message",
+                        "calendar",
+                        "money",
+                        "settings",
+                        "people",
+                      ][i]
+                    }
+                  />
+                  {p}
+                  {page === p && <span className="navDot" />}
+                </button>
+              ),
+          )}
         </nav>
         <div className="sidebarBottom">
           <div className="sidebarNote">
@@ -471,8 +642,8 @@ function App() {
           <div className="account">
             <span className="adminAvatar">DS</span>
             <div>
-              <strong>Direção Semente</strong>
-              <small>Administradora</small>
+              <strong>{actor.name}</strong>
+              <small>{roleLabels[actor.role] || "Sem acesso"}</small>
             </div>
           </div>
         </div>
@@ -482,6 +653,21 @@ function App() {
           <span>
             Gestão escolar <b>/</b> {page}
           </span>
+          <label className="demoProfile">
+            Perfil de demonstração
+            <select
+              aria-label="Perfil de acesso"
+              value={actorId}
+              disabled={busy}
+              onChange={(e) => switchProfile(e.target.value)}
+            >
+              {currentProfiles.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name.split(" · ")[0]} · {roleLabels[a.role]}
+                </option>
+              ))}
+            </select>
+          </label>
           <span className="mode">
             <i />
             {api
@@ -506,34 +692,55 @@ function App() {
                     "Encontros e descobertas, com o destino certo.",
                     "Mais clareza para a escola. Mais facilidade para as famílias.",
                     "As informações e a evolução do thinkEdu.",
+                    "As pessoas certas, com o acesso certo.",
                   ][pages.indexOf(page)]
                 }
               </p>
             </div>
-            <button
-              className="primary"
-              onClick={() =>
-                openModal(
-                  page === pages[1]
-                    ? "enroll"
+            {can(
+              actor,
+              page === pages[7]
+                ? "users.manage"
+                : page === pages[1]
+                  ? "students.write"
+                  : page === pages[4]
+                    ? "calendar.write"
+                    : page === pages[3] && channel === "Mural"
+                      ? "mural.write"
+                      : "communication.write",
+            ) && (
+              <button
+                className="primary"
+                onClick={() =>
+                  openModal(
+                    page === pages[7]
+                      ? "user"
+                      : page === pages[1]
+                        ? "enroll"
+                        : page === "Calendário"
+                          ? "event"
+                          : page === "Comunicação" && channel === "Mural"
+                            ? "post"
+                            : "notice",
+                  )
+                }
+              >
+                <Icon name="plus" />
+                {page === pages[7]
+                  ? "Novo usuário"
+                  : page === pages[1]
+                    ? "Novo aluno"
                     : page === "Calendário"
-                      ? "event"
+                      ? "Novo evento"
                       : page === "Comunicação" && channel === "Mural"
-                        ? "post"
-                        : "notice",
-                )
-              }
-            >
-              <Icon name="plus" />
-              {page === pages[1]
-                ? "Novo aluno"
-                : page === "Calendário"
-                  ? "Novo evento"
-                  : page === "Comunicação" && channel === "Mural"
-                    ? "Nova publicação"
-                    : "Novo comunicado"}
-            </button>
+                        ? "Nova publicação"
+                        : "Novo comunicado"}
+              </button>
+            )}
           </header>
+          {api && !connected ? (
+            <p className="empty">Carregando seu acesso à escola…</p>
+          ) : null}
           {error && !modal && (
             <div role="alert" className="error">
               {error}
@@ -566,7 +773,7 @@ function App() {
               </span>
             </div>
           )}
-          {page === pages[0] && (
+          {page === pages[0] && can(actor, pagePermissions[0]) && (
             <>
               <div className="metrics">
                 <article>
@@ -599,16 +806,18 @@ function App() {
                     {pending.length} aguardando publicação
                   </span>
                 </article>
-                <article>
-                  <span className="metricIcon peach">
-                    <Icon name="money" />
-                  </span>
-                  <small>Valores em aberto</small>
-                  <strong className="amount">{money(open)}</strong>
-                  <span className="metricFoot">
-                    Total de cobranças da escola
-                  </span>
-                </article>
+                {can(actor, "finance.read") && (
+                  <article>
+                    <span className="metricIcon peach">
+                      <Icon name="money" />
+                    </span>
+                    <small>Valores em aberto</small>
+                    <strong className="amount">{money(open)}</strong>
+                    <span className="metricFoot">
+                      Total de cobranças da escola
+                    </span>
+                  </article>
+                )}
               </div>
               <div className="dashboardGrid">
                 <section className="panel dayPanel">
@@ -626,9 +835,9 @@ function App() {
                       <thead>
                         <tr>
                           <th>Aluno / turma</th>
-                          <th>Presença</th>
-                          <th>Entrada</th>
-                          <th>Rotina</th>
+                          {can(actor, "attendance.read") && <th>Presença</th>}
+                          {can(actor, "attendance.read") && <th>Entrada</th>}
+                          {can(actor, "routines.read") && <th>Rotina</th>}
                           <th />
                         </tr>
                       </thead>
@@ -725,77 +934,86 @@ function App() {
               </div>
             </>
           )}
-          {(page === pages[1] || page === pages[2]) && (
-            <>
-              {page === pages[1] && (
-                <div className="classCards">
-                  {classes.map(([id, name]) => (
-                    <button
-                      className={
-                        "classCard " + (classId === id ? "selected" : "")
-                      }
-                      key={id}
-                      onClick={() => setClass(id)}
-                    >
-                      <span className="classMotif">✳</span>
-                      <small>TURMA</small>
-                      <h2>{name}</h2>
-                      <p>
-                        {shown.children.filter((c) => c.classId === id).length}{" "}
-                        alunos ·{" "}
-                        {shown.actors
-                          .filter(
-                            (a) =>
-                              a.role === "teacher" && a.classIds?.includes(id),
-                          )
-                          .map((a) => a.name)
-                          .join(", ") || "Equipe escolar"}
-                      </p>
-                    </button>
-                  ))}
-                </div>
-              )}
-              <section className="panel">
-                <div className="sectionTitle">
-                  <h2>
-                    {page === pages[1]
-                      ? "Alunos da escola"
-                      : "Registros do dia"}
-                  </h2>
-                  <div className="search">
-                    <Icon name="search" size={18} />
-                    <input
-                      aria-label="Buscar aluno"
-                      placeholder="Buscar aluno ou turma"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                    />
+          {(page === pages[1] || page === pages[2]) &&
+            can(actor, "students.read") && (
+              <>
+                {page === pages[1] && can(actor, pagePermissions[1]) && (
+                  <div className="classCards">
+                    {classes.map(([id, name]) => (
+                      <button
+                        className={
+                          "classCard " + (classId === id ? "selected" : "")
+                        }
+                        key={id}
+                        onClick={() => setClass(id)}
+                      >
+                        <span className="classMotif">✳</span>
+                        <small>TURMA</small>
+                        <h2>{name}</h2>
+                        <p>
+                          {
+                            shown.children.filter((c) => c.classId === id)
+                              .length
+                          }{" "}
+                          alunos ·{" "}
+                          {shown.actors
+                            .filter(
+                              (a) =>
+                                a.role === "teacher" &&
+                                a.classIds?.includes(id),
+                            )
+                            .map((a) => a.name)
+                            .join(", ") || "Equipe escolar"}
+                        </p>
+                      </button>
+                    ))}
                   </div>
-                </div>
-                <div className="tableWrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Aluno / turma</th>
-                        <th>Presença</th>
-                        <th>Entrada</th>
-                        <th>Rotina</th>
-                        <th />
-                      </tr>
-                    </thead>
-                    <tbody>{children.map(row)}</tbody>
-                  </table>
-                </div>
-                {!children.length && (
-                  <p className="empty">Nenhum aluno encontrado.</p>
                 )}
-              </section>
-            </>
-          )}
-          {page === pages[3] && (
+                <section className="panel">
+                  <div className="sectionTitle">
+                    <h2>
+                      {page === pages[1]
+                        ? "Alunos da escola"
+                        : "Registros do dia"}
+                    </h2>
+                    <div className="search">
+                      <Icon name="search" size={18} />
+                      <input
+                        aria-label="Buscar aluno"
+                        placeholder="Buscar aluno ou turma"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="tableWrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Aluno / turma</th>
+                          {can(actor, "attendance.read") && <th>Presença</th>}
+                          {can(actor, "attendance.read") && <th>Entrada</th>}
+                          {can(actor, "routines.read") && <th>Rotina</th>}
+                          <th />
+                        </tr>
+                      </thead>
+                      <tbody>{children.map(row)}</tbody>
+                    </table>
+                  </div>
+                  {!children.length && (
+                    <p className="empty">Nenhum aluno encontrado.</p>
+                  )}
+                </section>
+              </>
+            )}
+          {page === pages[3] && can(actor, pagePermissions[3]) && (
             <>
               <div className="tabs">
-                {["Comunicados", "Mural", "Conversas"].map((t) => (
+                {[
+                  "Comunicados",
+                  "Mural",
+                  ...(can(actor, "messages.read") ? ["Conversas"] : []),
+                ].map((t) => (
                   <button
                     className={channel === t ? "selected" : ""}
                     key={t}
@@ -925,7 +1143,7 @@ function App() {
               )}
             </>
           )}
-          {page === pages[4] && (
+          {page === pages[4] && can(actor, pagePermissions[4]) && (
             <>
               <div className="filters">
                 <input
@@ -1055,7 +1273,7 @@ function App() {
               </p>
             </>
           )}
-          {page === pages[5] && (
+          {page === pages[5] && can(actor, pagePermissions[5]) && (
             <>
               <div className="metrics">
                 <article>
@@ -1189,7 +1407,7 @@ function App() {
               </section>
             </>
           )}
-          {page === pages[6] && (
+          {page === pages[6] && can(actor, pagePermissions[6]) && (
             <div className="settingsGrid">
               <section className="panel">
                 <span className="eyebrow">A ESCOLA</span>
@@ -1243,6 +1461,9 @@ function App() {
                       <span>
                         {(
                           {
+                            "user.create": "Usuário cadastrado",
+                            "user.update": "Acesso atualizado",
+                            "student.create": "Aluno cadastrado",
                             "notice.create": "Comunicado publicado",
                             "mural.create": "Publicação no mural",
                             "event.create": "Evento criado",
@@ -1261,6 +1482,120 @@ function App() {
                 )}
               </section>
             </div>
+          )}
+          {page === pages[7] && can(actor, "users.manage") && (
+            <>
+              <section className="panel">
+                <div className="sectionTitle">
+                  <h2>Equipe da escola</h2>
+                  <span className="badge">
+                    Acesso compartilhado · Web + App
+                  </span>
+                </div>
+                <div className="tableWrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Pessoa</th>
+                        <th>Perfil</th>
+                        <th>Turmas</th>
+                        <th>Situação</th>
+                        <th />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shown.actors
+                        .filter((a) => a.role !== "family")
+                        .map((a) => (
+                          <tr key={a.id}>
+                            <td>
+                              <strong>{a.name}</strong>
+                            </td>
+                            <td>{roleLabels[a.role]}</td>
+                            <td>
+                              {a.role === "teacher"
+                                ? (a.classIds || [])
+                                    .map(
+                                      (cid) =>
+                                        classes.find(([id]) => id === cid)?.[1],
+                                    )
+                                    .join(", ")
+                                : "Toda a escola"}
+                            </td>
+                            <td>
+                              <span
+                                className={
+                                  "badge " +
+                                  (a.active !== false ? "green" : "orange")
+                                }
+                              >
+                                {a.active !== false ? "Ativo" : "Desativado"}
+                              </span>
+                            </td>
+                            <td>
+                              <button
+                                onClick={() => {
+                                  openModal("user");
+                                  setForm({
+                                    userId: a.id,
+                                    name: a.name,
+                                    role:
+                                      a.role === "admin" ? "director" : a.role,
+                                    active: String(a.active !== false),
+                                    classes: (a.classIds || []).join(","),
+                                  });
+                                }}
+                              >
+                                Editar acesso
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+              <section className="panel permissionPanel">
+                <h2>O que cada perfil pode fazer</h2>
+                <div className="tableWrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Área</th>
+                        {staffRoles.map((r) => (
+                          <th key={r}>{roleLabels[r]}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        ["Cadastros", "students.write"],
+                        ["Rotinas pedagógicas", "routines.write"],
+                        ["Presença", "attendance.write"],
+                        ["Comunicados e mural", "communication.write"],
+                        ["Conversas individuais", "messages.write"],
+                        ["Calendário", "calendar.write"],
+                        ["Financeiro", "finance.read"],
+                        ["Usuários e permissões", "users.manage"],
+                      ].map(([label, p]) => (
+                        <tr key={p}>
+                          <td>{label}</td>
+                          {staffRoles.map((r) => (
+                            <td key={r}>
+                              {(rolePermissions[r] || []).includes(p)
+                                ? r === "teacher"
+                                  ? "Suas turmas"
+                                  : "Permitido"
+                                : "Sem acesso"}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </>
           )}
           <footer>
             <span>thinkEdu de ThinkSystems</span>
@@ -1300,6 +1635,9 @@ function App() {
           {
             (
               {
+                user: form.userId
+                  ? "Editar acesso"
+                  : "Uma nova pessoa na equipe.",
                 enroll: "Um novo começo na escola.",
                 notice: "Uma mensagem, o destino certo.",
                 post: "Uma nova história no mural.",
@@ -1318,7 +1656,7 @@ function App() {
               <div>
                 <h3>{selected.name}</h3>
                 <p>{selected.group}</p>
-                {status(selected)}
+                {can(actor, "attendance.read") && status(selected)}
               </div>
             </div>
             <div className="settingRow">
@@ -1355,9 +1693,12 @@ function App() {
                   <p>{r.note}</p>
                 </div>
               ))}
-            {!routines.some((r) => r.childId === selected.id) && (
-              <p className="empty">Ainda não há rotina registrada neste dia.</p>
-            )}
+            {can(actor, "routines.read") &&
+              !routines.some((r) => r.childId === selected.id) && (
+                <p className="empty">
+                  Ainda não há rotina registrada neste dia.
+                </p>
+              )}
             <div className="actions">
               <button
                 className="secondary"
@@ -1396,6 +1737,67 @@ function App() {
                       </div>
                     ))}
                 </div>
+              </>
+            )}
+            {modal === "user" && (
+              <>
+                {field("name", "Nome da pessoa")}
+                <label>
+                  Perfil de acesso
+                  <select
+                    value={form.role || "coordinator"}
+                    onChange={(e) => setForm({ ...form, role: e.target.value })}
+                  >
+                    {staffRoles.map((r) => (
+                      <option key={r} value={r}>
+                        {roleLabels[r]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {form.role === "teacher" && (
+                  <fieldset>
+                    <legend>Turmas autorizadas</legend>
+                    {classes.map(([id, n]) => (
+                      <label className="classCheck" key={id}>
+                        <input
+                          type="checkbox"
+                          checked={(form.classes || "").split(",").includes(id)}
+                          onChange={(e) => {
+                            const ids = (form.classes || "")
+                              .split(",")
+                              .filter(Boolean);
+                            setForm({
+                              ...form,
+                              classes: (e.target.checked
+                                ? [...ids, id]
+                                : ids.filter((cid) => cid !== id)
+                              ).join(","),
+                            });
+                          }}
+                        />
+                        {n}
+                      </label>
+                    ))}
+                  </fieldset>
+                )}
+                <label>
+                  Situação
+                  <select
+                    value={form.active || "true"}
+                    onChange={(e) =>
+                      setForm({ ...form, active: e.target.value })
+                    }
+                  >
+                    <option value="true">Ativo</option>
+                    <option value="false">Desativado</option>
+                  </select>
+                </label>
+                <p className="subtle">
+                  Permissões aplicadas à web e ao aplicativo. Professores
+                  acessam apenas as turmas vinculadas. Nesta demonstração, a
+                  escolha do perfil substitui o login real.
+                </p>
               </>
             )}
             {modal === "enroll" && (
@@ -1523,7 +1925,7 @@ function App() {
                 {form.status === "left" && field("departure", "Saída", "time")}
               </>
             )}
-            {!["event", "enroll"].includes(modal) && (
+            {!["event", "enroll", "user"].includes(modal) && (
               <label>
                 {modal === "attendance" ? "Observação" : "Mensagem"}
                 <textarea
@@ -1557,11 +1959,13 @@ function App() {
                     ? "Enviar mensagem"
                     : modal === "attendance"
                       ? "Salvar presença"
-                      : modal === "enroll"
-                        ? "Cadastrar aluno"
-                        : modal === "event"
-                          ? "Criar evento"
-                          : "Publicar"}
+                      : modal === "user"
+                        ? "Salvar acesso"
+                        : modal === "enroll"
+                          ? "Cadastrar aluno"
+                          : modal === "event"
+                            ? "Criar evento"
+                            : "Publicar"}
               </button>
             </div>
           </form>

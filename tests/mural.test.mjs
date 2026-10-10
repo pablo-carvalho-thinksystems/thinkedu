@@ -51,7 +51,7 @@ test("família não publica no mural e professora não publica para turma sem v�
   const state = createSeed();
   assert.throws(
     () => applyCommand(state, state.actors[0], command),
-    /Somente a equipe/,
+    /permissão/,
   );
   assert.throws(
     () =>

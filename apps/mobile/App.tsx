@@ -34,6 +34,8 @@ import * as DocumentPicker from "expo-document-picker";
 import { Directory, File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { useVideoPlayer, VideoView } from "expo-video";
+import { StaffWorkspace } from "./src/StaffWorkspace";
+import { can, roleLabels } from "../../packages/core/permissions.mjs";
 import { VersionNotice } from "./src/VersionNotice";
 import { TeacherWorkspace, type TeacherPage } from "./src/TeacherWorkspace";
 import { attendanceLabel } from "../../packages/core/teacher.mjs";
@@ -435,6 +437,7 @@ function SchoolApp() {
     [eventTime, setEventTime] = useState("08:30"),
     [place, setPlace] = useState("Escola Semente");
   const [dayDate, setDayDate] = useState(DEMO_DATE);
+  const [profilePicker, setProfilePicker] = useState(false);
   const [teacherDate, setTeacherDate] = useState(DEMO_DATE),
     [teacherClassId, setTeacherClassId] = useState("jardim"),
     [teacherStudentId, setTeacherStudentId] = useState("lia");
@@ -601,6 +604,7 @@ function SchoolApp() {
     setFilter("all");
   }
   function role(id: string) {
+    setProfilePicker(false);
     if (busy) return;
     school.switchRole(id);
     setTeacherDate(DEMO_DATE);
@@ -717,15 +721,23 @@ function SchoolApp() {
           </Copy>
         </View>
       )}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={family ? "Abrir comunicados" : "Abrir mensagens"}
-        style={s.circle}
-        onPress={() => tab(family ? "notices" : "inbox")}
-      >
-        <Icon name="bell" />
-        {pending.length > 0 && <View style={s.unread} />}
-      </Pressable>
+      {can(actor, "communication.read") && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            family || !can(actor, "messages.read")
+              ? "Abrir comunicados"
+              : "Abrir mensagens"
+          }
+          style={s.circle}
+          onPress={() =>
+            tab(family || !can(actor, "messages.read") ? "notices" : "inbox")
+          }
+        >
+          <Icon name="bell" />
+          {pending.length > 0 && <View style={s.unread} />}
+        </Pressable>
+      )}
     </View>
   );
   const dateBar = (
@@ -772,6 +784,58 @@ function SchoolApp() {
     setCalendar({ year: d.getFullYear(), month: d.getMonth() });
   };
   const content = () => {
+    const permission: Partial<Record<Page, string>> = {
+      routine: "routines.write",
+      teacherPlan: "activities.read",
+      teacherActivity: "activities.write",
+      teacherAttendance: "attendance.read",
+      teacherAttendanceEdit: "attendance.write",
+      inbox: "messages.read",
+      chat: "messages.read",
+      compose: "communication.write",
+      muralCompose: "mural.write",
+      finance: "finance.read",
+      invoice: "finance.read",
+      calendar: "calendar.read",
+      event: "calendar.write",
+      notices: "communication.read",
+      notice: "communication.read",
+      materials: "communication.read",
+      mural: "mural.read",
+      muralPost: "mural.read",
+    };
+    if (permission[page] && !can(actor, permission[page]!))
+      return (
+        <Card>
+          <Heading>Acesso restrito</Heading>
+          <Copy>Seu perfil não tem permissão para esta área.</Copy>
+          <Button onPress={() => tab(family ? "home" : "classroom")}>
+            Voltar ao início
+          </Button>
+        </Card>
+      );
+    if (
+      !family &&
+      actor.role !== "teacher" &&
+      ["classroom", "teacherStudents", "finance"].includes(page)
+    )
+      return (
+        <StaffWorkspace
+          data={data}
+          actor={actor}
+          view={
+            page === "finance"
+              ? "finance"
+              : page === "teacherStudents"
+                ? "students"
+                : "home"
+          }
+          busy={busy}
+          onCommand={dispatch}
+          onGo={(p) => go(p as Page)}
+        />
+      );
+
     switch (page) {
       case "home":
         return (
@@ -2523,52 +2587,94 @@ function SchoolApp() {
             active: ["profile", "finance", "invoice"].includes(page),
           },
         ]
-      : [
-          {
-            label: "Hoje",
-            icon: "home",
-            page: "classroom",
-            active: [
-              "classroom",
-              "teacherAttendance",
-              "teacherAttendanceEdit",
-            ].includes(page),
-          },
-          {
-            label: "Turma",
-            icon: "users",
-            page: "teacherStudents",
-            active: ["teacherStudents", "teacherStudent", "routine"].includes(
-              page,
-            ),
-          },
-          {
-            label: "Agenda",
-            icon: "calendar",
-            page: "teacherPlan",
-            active: [
-              "teacherPlan",
-              "teacherActivity",
-              "calendar",
-              "event",
-            ].includes(page),
-          },
-          {
-            label: "Famílias",
-            icon: "message-circle",
-            page: "inbox",
-            active: [
-              "inbox",
-              "chat",
-              "compose",
-              "notice",
-              "mural",
-              "muralPost",
-              "muralCompose",
-              "materials",
-            ].includes(page),
-          },
-        ];
+      : actor.role !== "teacher"
+        ? [
+            {
+              label: "Início",
+              icon: "home",
+              page: "classroom",
+              active: page === "classroom",
+            },
+            {
+              label: "Alunos",
+              icon: "users",
+              page: "teacherStudents",
+              active: page === "teacherStudents",
+            },
+            ...(can(actor, "communication.read")
+              ? [
+                  {
+                    label: "Recados",
+                    icon: "file-text" as IconName,
+                    page: "notices" as Page,
+                    active: [
+                      "notices",
+                      "notice",
+                      "mural",
+                      "muralPost",
+                      "muralCompose",
+                      "compose",
+                    ].includes(page),
+                  },
+                ]
+              : []),
+            ...(can(actor, "finance.read")
+              ? [
+                  {
+                    label: "Financeiro",
+                    icon: "credit-card" as IconName,
+                    page: "finance" as Page,
+                    active: page === "finance",
+                  },
+                ]
+              : []),
+          ]
+        : [
+            {
+              label: "Hoje",
+              icon: "home",
+              page: "classroom",
+              active: [
+                "classroom",
+                "teacherAttendance",
+                "teacherAttendanceEdit",
+              ].includes(page),
+            },
+            {
+              label: "Turma",
+              icon: "users",
+              page: "teacherStudents",
+              active: ["teacherStudents", "teacherStudent", "routine"].includes(
+                page,
+              ),
+            },
+            {
+              label: "Agenda",
+              icon: "calendar",
+              page: "teacherPlan",
+              active: [
+                "teacherPlan",
+                "teacherActivity",
+                "calendar",
+                "event",
+              ].includes(page),
+            },
+            {
+              label: "Famílias",
+              icon: "message-circle",
+              page: "inbox",
+              active: [
+                "inbox",
+                "chat",
+                "compose",
+                "notice",
+                "mural",
+                "muralPost",
+                "muralCompose",
+                "materials",
+              ].includes(page),
+            },
+          ];
   return (
     <View style={s.stage}>
       {Platform.OS === "web" && width > 1000 && (
@@ -2616,10 +2722,13 @@ function SchoolApp() {
               </Copy>
               <Pressable
                 accessibilityRole="button"
-                onPress={() => role(family ? "ana" : "rafael")}
+                onPress={() => {
+                  setProfilePicker(true);
+                  void school.refreshProfiles();
+                }}
               >
                 <Copy bold color={C.blue} size={10}>
-                  {family ? "Ver educadora" : "Ver família"} ⇄
+                  {roleLabels[actor.role]} ⇄
                 </Copy>
               </Pressable>
             </View>
@@ -2685,6 +2794,36 @@ function SchoolApp() {
           </SafeAreaView>
         </KeyboardAvoidingView>
       </View>
+      <Modal
+        visible={profilePicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setProfilePicker(false)}
+      >
+        <View style={s.overlay}>
+          <View style={[s.sheet, { maxHeight: "85%" }]}>
+            <Heading>Entrar na demonstração</Heading>
+            <Copy>
+              Escolha uma pessoa. No ambiente real, o perfil será identificado
+              pelo login.
+            </Copy>
+            <ScrollView>
+              {school.profiles.map((a) => (
+                <Row
+                  key={a.id}
+                  title={a.name}
+                  sub={roleLabels[a.role]}
+                  icon="user"
+                  onPress={() => role(a.id)}
+                />
+              ))}
+            </ScrollView>
+            <Button outline onPress={() => setProfilePicker(false)}>
+              Cancelar
+            </Button>
+          </View>
+        </View>
+      </Modal>
       <Modal
         visible={sheet}
         transparent

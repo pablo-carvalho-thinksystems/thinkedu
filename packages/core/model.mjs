@@ -1,3 +1,10 @@
+import {
+  can,
+  canonicalRole,
+  effectiveActor,
+  staffRoles,
+  seedStaff,
+} from "./permissions.mjs";
 import { seedTeacherDay } from "./teacher.mjs";
 import { seedPosts, validateAttachment } from "./mural.mjs";
 export const DEMO_DATE = "2026-10-09";
@@ -76,6 +83,7 @@ export function createSeed() {
         classIds: ["jardim", "maternal"],
         financial: true,
       },
+      ...seedStaff(),
     ],
     routines: [
       {
@@ -207,18 +215,28 @@ export function createSeed() {
   };
 }
 export function accessibleChildren(state, actor) {
-  if (actor.schoolId !== state.school.id) return [];
-  return state.children.filter(
-    (c) =>
-      actor.role === "admin" ||
-      (actor.role === "family"
+  actor = effectiveActor(state, actor);
+  if (!can(actor, "students.read")) return [];
+  return state.children.filter((c) =>
+    canonicalRole(actor.role) === "teacher"
+      ? actor.classIds.includes(c.classId)
+      : actor.role === "family"
         ? actor.childIds.includes(c.id)
-        : actor.classIds.includes(c.classId)),
+        : true,
   );
 }
 export function upgradeStore(state) {
   return {
     ...state,
+    actors: state.actors
+      .map((a) => ({ ...a, active: a.active !== false }))
+      .concat(
+        state.school.id === "semente"
+          ? seedStaff().filter(
+              (a) => !state.actors.some((existing) => existing.id === a.id),
+            )
+          : [],
+      ),
     attendance: state.attendance ?? seedTeacherDay().attendance,
     activities: state.activities ?? seedTeacherDay().activities,
     posts: (state.posts ?? seedPosts()).map((post) =>
@@ -239,53 +257,90 @@ export function upgradeStore(state) {
 }
 export function visibleState(state, actor) {
   state = upgradeStore(state);
+  actor = effectiveActor(state, actor);
   const children = accessibleChildren(state, actor),
     ids = new Set(children.map((c) => c.id));
   const { audit, actors, ...rest } = state;
   return {
     ...rest,
-    children,
-    attendance: state.attendance.filter((a) => ids.has(a.childId)),
-    activities:
-      actor.role === "family"
-        ? []
-        : state.activities.filter((a) => a.childIds.every((id) => ids.has(id))),
-    routines: state.routines.filter(
-      (r) => ids.has(r.childId) && (actor.role !== "family" || r.published),
-    ),
-    notices: state.notices
-      .filter((n) => n.childIds.some((id) => ids.has(id)))
-      .map((n) => ({
-        ...n,
-        childIds: n.childIds.filter((id) => ids.has(id)),
-        responses: n.responses.filter((r) => ids.has(r.childId)),
-      })),
-    posts: state.posts
-      .filter((p) => p.childIds.some((id) => ids.has(id)))
-      .map((p) => ({ ...p, childIds: p.childIds.filter((id) => ids.has(id)) })),
-    messages: state.messages.filter((m) => ids.has(m.childId)),
-    events: state.events
-      .filter((e) => e.childIds.some((id) => ids.has(id)))
-      .map((e) => ({ ...e, childIds: e.childIds.filter((id) => ids.has(id)) })),
-    invoices: actor.financial
+    currentActor: actor,
+    children: can(actor, "attendance.read")
+      ? children
+      : children.map((c) => ({ ...c, arrival: "—" })),
+    attendance: can(actor, "attendance.read")
+      ? state.attendance.filter((a) => ids.has(a.childId))
+      : [],
+    activities: !can(actor, "activities.read")
+      ? []
+      : state.activities.filter((a) => a.childIds.every((id) => ids.has(id))),
+    routines: !can(actor, "routines.read")
+      ? []
+      : state.routines.filter(
+          (r) => ids.has(r.childId) && (actor.role !== "family" || r.published),
+        ),
+    notices: !can(actor, "communication.read")
+      ? []
+      : state.notices
+          .filter((n) => n.childIds.some((id) => ids.has(id)))
+          .map((n) => ({
+            ...n,
+            childIds: n.childIds.filter((id) => ids.has(id)),
+            responses: n.responses.filter((r) => ids.has(r.childId)),
+          })),
+    posts: !can(actor, "mural.read")
+      ? []
+      : state.posts
+          .filter((p) => p.childIds.some((id) => ids.has(id)))
+          .map((p) => ({
+            ...p,
+            childIds: p.childIds.filter((id) => ids.has(id)),
+          })),
+    messages: !can(actor, "messages.read")
+      ? []
+      : state.messages.filter((m) => ids.has(m.childId)),
+    events: !can(actor, "calendar.read")
+      ? []
+      : state.events
+          .filter((e) => e.childIds.some((id) => ids.has(id)))
+          .map((e) => ({
+            ...e,
+            childIds: e.childIds.filter((id) => ids.has(id)),
+          })),
+    invoices: can(actor, "finance.read")
       ? state.invoices.filter((i) => ids.has(i.childId))
       : [],
-    actors: actors
-      .filter(
-        (a) =>
-          a.id === actor.id ||
-          a.role === "teacher" ||
-          (actor.role !== "family" && a.childIds.some((id) => ids.has(id))),
-      )
-      .map((a) => ({
-        id: a.id,
-        name: a.name,
-        role: a.role,
-        ...(actor.role === "admin"
-          ? { childIds: a.childIds, classIds: a.classIds }
-          : {}),
-      })),
-    audit: actor.role === "admin" ? audit : [],
+    actors: !can(actor, "students.read")
+      ? []
+      : actors
+          .filter((a) => a.schoolId === state.school.id)
+          .filter(
+            (a) =>
+              can(actor, "users.manage") ||
+              a.id === actor.id ||
+              a.role === "teacher" ||
+              ((can(actor, "messages.read") ||
+                can(actor, "students.write") ||
+                can(actor, "finance.read")) &&
+                actor.role !== "family" &&
+                a.childIds.some((id) => ids.has(id))),
+          )
+          .map((a) => ({
+            id: a.id,
+            name: a.name,
+            role: a.role,
+            ...(can(actor, "users.manage") ||
+            can(actor, "students.write") ||
+            (can(actor, "finance.read") && actor.role !== "family")
+              ? {
+                  childIds: a.childIds,
+                  classIds: a.classIds,
+                  active: a.active !== false,
+                  financial: a.financial,
+                  schoolId: a.schoolId,
+                }
+              : {}),
+          })),
+    audit: can(actor, "audit.read") ? audit : [],
   };
 }
 function fail(message, status = 400) {
@@ -314,7 +369,9 @@ export function applyCommand(
   id = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`,
   options = {},
 ) {
+  actor = effectiveActor(state, actor);
   if (
+    actor.active === false ||
     !state.actors.some((a) => a.id === actor.id) ||
     actor.schoolId !== state.school.id
   )
@@ -323,17 +380,86 @@ export function applyCommand(
   const requireChild = (childId) => {
     if (!ids.has(childId)) fail("Aluno sem vínculo autorizado.", 403);
   };
-  const teacher = () => {
-    if (!["teacher", "admin"].includes(actor.role))
-      fail("Somente a equipe pode executar esta ação.", 403);
+  const requirePermission = (permission) => {
+    if (!can(actor, permission))
+      fail("Seu perfil não tem permissão para esta ação.", 403);
   };
+  const permissions = {
+    "student.create": "students.write",
+    "attendance.save": "attendance.write",
+    "activity.create": "activities.write",
+    "activity.status": "activities.write",
+    "mural.create": "mural.write",
+    "message.send": "messages.write",
+    "notice.create": "communication.write",
+    "notice.read": "communication.read",
+    "notice.respond": "communication.respond",
+    "routine.save": "routines.write",
+    "event.create": "calendar.write",
+    "user.create": "users.manage",
+    "user.update": "users.manage",
+  };
+  if (permissions[command?.type]) requirePermission(permissions[command.type]);
   const next = structuredClone(upgradeStore(state)),
     type = command?.type;
   const timeValid = (value) =>
     typeof value === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
-  if (type === "student.create") {
-    if (actor.role !== "admin")
-      fail("Somente a direção pode cadastrar alunos.", 403);
+  let auditSubject = null;
+  if (type === "user.create" || type === "user.update") {
+    const target =
+      type === "user.update"
+        ? next.actors.find((a) => a.id === command.userId)
+        : null;
+    if (
+      type === "user.update" &&
+      (!target ||
+        target.role === "family" ||
+        target.schoolId !== next.school.id)
+    )
+      fail("Usuário da equipe não encontrado.", 404);
+    const role = canonicalRole(command.role);
+    if (
+      !staffRoles.includes(role) ||
+      typeof command.active !== "boolean" ||
+      !Array.isArray(command.classIds)
+    )
+      fail("Revise o perfil e o vínculo com as turmas.");
+    const classIds = [...new Set(command.classIds)];
+    if (
+      classIds.some((cid) => !next.children.some((c) => c.classId === cid)) ||
+      (role === "teacher" && !classIds.length)
+    )
+      fail("Professores precisam de ao menos uma turma válida.");
+    if (target?.id === actor.id && (role !== "director" || !command.active))
+      fail("Você não pode remover seu próprio acesso de direção.", 409);
+    if (
+      target &&
+      canonicalRole(target.role) === "director" &&
+      target.active !== false &&
+      (role !== "director" || !command.active) &&
+      !next.actors.some(
+        (a) =>
+          a.id !== target.id &&
+          canonicalRole(a.role) === "director" &&
+          a.active !== false,
+      )
+    )
+      fail("A escola precisa manter ao menos uma diretoria ativa.", 409);
+    const user = {
+      id: target?.id || id(),
+      name: text(command.name, 100),
+      role,
+      schoolId: next.school.id,
+      childIds: [],
+      classIds: role === "teacher" ? classIds : [],
+      financial: ["director", "finance"].includes(role),
+      active: command.active,
+    };
+    auditSubject = user.id;
+    if (target)
+      next.actors = next.actors.map((a) => (a.id === target.id ? user : a));
+    else next.actors.push(user);
+  } else if (type === "student.create") {
     const group = next.children.find(
       (c) => c.classId === command.classId,
     )?.group;
@@ -377,7 +503,6 @@ export function applyCommand(
     });
     guardian.childIds.push(childId);
   } else if (type === "attendance.save") {
-    teacher();
     requireChild(command.childId);
     if (
       !validDate(command.date) ||
@@ -408,7 +533,6 @@ export function applyCommand(
     );
     next.attendance.push(entry);
   } else if (type === "activity.create") {
-    teacher();
     if (
       !validDate(command.date) ||
       !timeValid(command.time) ||
@@ -428,7 +552,6 @@ export function applyCommand(
       updatedAt: now,
     });
   } else if (type === "activity.status") {
-    teacher();
     const activity = next.activities.find((a) => a.id === command.activityId);
     if (!activity) fail("Atividade não encontrada.", 404);
     activity.childIds.forEach(requireChild);
@@ -437,7 +560,6 @@ export function applyCommand(
     activity.status = command.status;
     activity.updatedAt = now;
   } else if (type === "mural.create") {
-    teacher();
     if (!Array.isArray(command.childIds) || !command.childIds.length)
       fail("Selecione os destinatários.");
     command.childIds.forEach(requireChild);
@@ -473,7 +595,6 @@ export function applyCommand(
       createdAt: now,
     });
   } else if (type === "notice.create") {
-    teacher();
     if (!Array.isArray(command.childIds) || !command.childIds.length)
       fail("Selecione os destinatários.");
     command.childIds.forEach(requireChild);
@@ -523,7 +644,6 @@ export function applyCommand(
       });
     }
   } else if (type === "routine.save") {
-    teacher();
     requireChild(command.childId);
     if (
       !validDate(command.date) ||
@@ -557,7 +677,6 @@ export function applyCommand(
     );
     next.routines.push(routine);
   } else if (type === "event.create") {
-    teacher();
     if (
       !validDate(command.date) ||
       !/^\d{2}:\d{2}$/.test(command.time) ||
@@ -584,7 +703,13 @@ export function applyCommand(
     actorId: actor.id,
     type,
     at: now,
-    subject: command.childId || command.noticeId || command.activityId || null,
+    subject:
+      auditSubject ||
+      command.userId ||
+      command.childId ||
+      command.noticeId ||
+      command.activityId ||
+      null,
   });
   return next;
 }

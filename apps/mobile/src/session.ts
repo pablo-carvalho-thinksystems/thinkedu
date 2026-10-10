@@ -1,52 +1,84 @@
 import { useEffect, useRef, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { AppState } from "react-native";
 import {
   createSeed,
   upgradeStore,
   visibleState,
   applyCommand,
+  type VisibleStore,
 } from "../../../packages/core/model.mjs";
-
 export type Store = ReturnType<typeof createSeed>;
 export type Actor = Store["actors"][number];
 export type Child = Store["children"][number];
 export type Command = Record<string, unknown> & { type: string };
-const KEY = "thinkedu.demo.v1";
-const base = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, "");
-
+const KEY = "thinkedu.demo.v1",
+  base = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, "");
+function emptyState(actor: Actor): VisibleStore {
+  const state = createSeed();
+  for (const key of [
+    "children",
+    "routines",
+    "attendance",
+    "activities",
+    "notices",
+    "messages",
+    "invoices",
+    "events",
+    "posts",
+    "audit",
+  ] as const)
+    (state[key] as unknown[]) = [];
+  state.actors = [actor];
+  return visibleState(state, actor);
+}
 export function useSchool() {
-  const [store, setStore] = useState<Store>(createSeed);
-  const [actorId, setActorId] = useState("rafael");
-  const [ready, setReady] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const token = useRef("");
-  const locking = useRef(false);
-  const actor = createSeed().actors.find((a) => a.id === actorId)!;
+  const [store, setStore] = useState<Store>(createSeed),
+    [remote, setRemote] = useState<VisibleStore | null>(null),
+    [actorId, setActorId] = useState("rafael"),
+    [sessionActor, setSessionActor] = useState<Actor>(createSeed().actors[0]),
+    [profiles, setProfiles] = useState<Actor[]>(createSeed().actors),
+    [ready, setReady] = useState(false),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  const token = useRef(""),
+    locking = useRef(false);
+  const actor = base
+    ? remote?.currentActor || sessionActor
+    : store.actors.find((a) => a.id === actorId) || sessionActor;
   async function request(path: string, method = "GET", body?: unknown) {
-    const response = await fetch(`${base}${path}`, {
+    const response = await fetch(base + path, {
       method,
       headers: {
         "Content-Type": "application/json",
-        ...(token.current ? { Authorization: `Bearer ${token.current}` } : {}),
+        ...(token.current ? { Authorization: "Bearer " + token.current } : {}),
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
     const data = await response.json();
-    if (!response.ok)
-      throw new Error(data.error || "Não foi possível concluir.");
+    if (!response.ok) throw Error(data.error || "Não foi possível concluir.");
     return data;
   }
   useEffect(() => {
     let active = true;
+    token.current = "";
+    setReady(false);
+    setRemote(null);
+    setError("");
     (async () => {
       try {
         if (base) {
+          const ps = await request("/demo/profiles");
+          if (active) setProfiles(ps);
           const session = await request("/demo/session", "POST", { actorId });
           if (!active) return;
           token.current = session.token;
+          setSessionActor(session.actor);
           const data = await request("/state");
-          if (active) setStore(upgradeStore(data));
+          if (active) {
+            setRemote(data);
+            setReady(true);
+          }
         } else {
           const saved = await AsyncStorage.getItem(KEY);
           if (saved && active) {
@@ -58,61 +90,105 @@ export function useSchool() {
             )
               setStore(upgradeStore(data));
           }
+          if (active) setReady(true);
         }
       } catch (e) {
-        if (active)
-          setError(
-            e instanceof Error ? e.message : "Falha ao abrir a demonstração.",
-          );
-      } finally {
-        if (active) setReady(true);
+        if (active) {
+          setError((e as Error).message);
+          setReady(false);
+        }
       }
     })();
     return () => {
       active = false;
     };
   }, [actorId]);
+  useEffect(() => {
+    if (!base || !ready) return;
+    let active = true;
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active")
+        void request("/state")
+          .then((data) => {
+            if (active) setRemote(data);
+          })
+          .catch((e) => {
+            if (active) {
+              setRemote(null);
+              setReady(false);
+              setError(e.message);
+            }
+          });
+    });
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, [actorId, ready]);
   async function dispatch(command: Command) {
-    if (locking.current) return false;
+    if (locking.current || !ready) return false;
     locking.current = true;
     setBusy(true);
     setError("");
     try {
       const next = base
         ? await request("/commands", "POST", command)
-        : applyCommand(
-            store,
-            actor,
-            command,
-            "2026-10-09T15:00:00-03:00",
-            undefined,
-            { allowLocalMedia: true },
-          );
-      if (!base) await AsyncStorage.setItem(KEY, JSON.stringify(next));
-      setStore(next);
+        : applyCommand(store, actor, command, undefined, undefined, {
+            allowLocalMedia: true,
+          });
+      if (base) setRemote(next);
+      else {
+        await AsyncStorage.setItem(KEY, JSON.stringify(next));
+        setStore(next);
+      }
       return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Não foi possível salvar.");
+      setError((e as Error).message);
       return false;
     } finally {
       locking.current = false;
       setBusy(false);
     }
   }
+  async function refreshProfiles() {
+    if (!base) return;
+    try {
+      setProfiles(await request("/demo/profiles"));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
   function switchRole(id: string) {
     if (id === actorId || locking.current) return;
+    const next = (base ? profiles : store.actors).find(
+      (a) => a.id === id && a.active !== false,
+    );
+    if (!next) return;
+    setSessionActor({
+      ...next,
+      childIds: next.childIds || [],
+      classIds: next.classIds || [],
+      schoolId: next.schoolId || store.school.id,
+      financial: next.financial || false,
+    });
     setReady(false);
     setActorId(id);
   }
   return {
-    data: base ? store : visibleState(store, actor),
+    data: base
+      ? remote || emptyState(sessionActor)
+      : visibleState(store, actor),
     actor,
-    ready,
+    profiles: (base ? profiles : store.actors).filter(
+      (a) => a.active !== false,
+    ),
+    ready: ready && actor.active !== false,
     busy,
     error,
     clearError: () => setError(""),
     dispatch,
     switchRole,
+    refreshProfiles,
     connected: !!base,
   };
 }

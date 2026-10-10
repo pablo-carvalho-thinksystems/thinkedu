@@ -111,3 +111,7 @@ Confira [arquitetura e próximos marcos](docs/architecture.md) e [limites de seg
 ## Administrativo web
 
 [Fluxos administrativos e limites da demonstração](docs/administrativo-web.md). [Configuração do aviso de atualização](docs/atualizacoes.md).
+
+## Usuários e permissões
+
+Diretoria, Coordenação, Professores, Financeiro e Secretaria compartilham as regras do domínio e da API. A diretoria gerencia contas em **Usuários e acessos**; professores ficam restritos às suas turmas. [Matriz de permissões e autenticação demonstrativa](docs/perfis-acesso.md).

@@ -15,6 +15,7 @@ export interface Actor {
   childIds: string[];
   classIds: string[];
   financial: boolean;
+  active?: boolean;
 }
 export interface Attendance {
   id: string;
@@ -141,12 +142,16 @@ export interface Store {
   audit: AuditEntry[];
 }
 export interface VisibleStore extends Omit<Store, "actors"> {
+  currentActor: Actor;
   actors: {
     id: string;
     name: string;
     role: string;
     childIds?: string[];
     classIds?: string[];
+    active?: boolean;
+    financial?: boolean;
+    schoolId?: string;
   }[];
 }
 export const DEMO_DATE: string;

@@ -105,9 +105,17 @@ const server = createServer(async (req, res) => {
         return send(400, { error: "JSON inválido." });
       }
     }
+    if (route === "/demo/profiles" && req.method === "GET")
+      return send(
+        200,
+        state.actors
+          .filter((a) => a.active !== false)
+          .map((a) => ({ id: a.id, name: a.name, role: a.role })),
+      );
     if (route === "/demo/session" && req.method === "POST") {
       const actor = state.actors.find((a) => a.id === body.actorId);
-      if (!actor) return send(400, { error: "Perfil inválido." });
+      if (!actor || actor.active === false)
+        return send(403, { error: "Perfil inválido ou desativado." });
       const token = randomUUID();
       sessions.set(token, { actorId: actor.id, expires: Date.now() + 3600000 });
       return send(200, { token, actor });
@@ -117,13 +125,18 @@ const server = createServer(async (req, res) => {
     if (!session || session.expires < Date.now())
       return send(401, { error: "Sessão inválida ou expirada." });
     const actor = state.actors.find((a) => a.id === session.actorId);
+    if (!actor || actor.active === false)
+      return send(401, { error: "Acesso desativado. Entre novamente." });
     if (route === "/state" && req.method === "GET")
       return send(200, visibleState(state, actor));
     if (route === "/commands" && req.method === "POST") {
       const task = queue.then(async () => {
         const next = applyCommand(state, actor, body);
         await persist(next);
-        return visibleState(state, actor);
+        return visibleState(
+          state,
+          state.actors.find((a) => a.id === actor.id),
+        );
       });
       queue = task.catch(() => {});
       return send(200, await task);

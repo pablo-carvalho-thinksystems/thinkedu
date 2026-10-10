@@ -51,7 +51,7 @@ test("somente equipe vinculada pode registrar presença; responsáveis veem apen
   const state = createSeed();
   assert.throws(
     () => applyCommand(state, state.actors[0], command),
-    /Somente a equipe/,
+    /permissão/,
   );
   assert.throws(
     () =>
@@ -150,7 +150,7 @@ test("planejamento fica com a equipe; atividade criada e concluída respeita seu
         activityId: "p-formas",
         status: "done",
       }),
-    /Somente a equipe/,
+    /permissão/,
   );
   assert.throws(
     () =>
