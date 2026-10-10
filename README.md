@@ -67,11 +67,11 @@ API persiste em `apps/api/data/demo.json`, ignorado pelo Git. `THINKEDU_DATA_FIL
 
 - Família com vários filhos, seleção individual e visão conjunta.
 - Rotina publicada, alimentação, descanso, higiene e observação da educadora.
-- Momentos da turma com imagem ilustrativa de criança fictícia.
+- Momentos da turma e fotos individuais ilustrativas de Lia e Bento nos cartões e seletores. [Origem e prompts dos retratos](docs/demo-assets.md).
 - Comunicados, filtros, registro de leitura e autorizações individuais por criança.
 - Conversas contextualizadas por aluno; mensagens persistidas.
 - Calendário mensal, navegação entre meses, detalhes e criação de eventos pela equipe.
-- Financeiro com mensalidades, histórico e detalhes. Pix/boleto explicam a integração pendente; não geram transações.
+- Financeiro conjunto da família, total de todos os filhos e cobranças agrupadas por competência. Um caminho de pagamento com Pix/boleto únicos e composição opcional do total. A seleção de um filho em outra tela não filtra a cobrança familiar. Pagamentos ainda são demonstrativos.
 - Educadora: turma, rascunho de rotina, revisão/publicação, destinatários de comunicados, solicitações de materiais e acompanhamento de respostas.
 - Direção: visão geral, pesquisa de alunos, comunicados, eventos e visão financeira.
 - Regras no servidor de vínculo responsável/aluno, turma/escola, acesso financeiro, validação de comandos e auditoria sem copiar conteúdo das mensagens.

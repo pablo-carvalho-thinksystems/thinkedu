@@ -23,6 +23,7 @@ import { PlusJakartaSans_700Bold } from "@expo-google-fonts/plus-jakarta-sans/70
 import { PlusJakartaSans_800ExtraBold } from "@expo-google-fonts/plus-jakarta-sans/800ExtraBold";
 import { colors as C, typography as T } from "../../packages/core/theme.mjs";
 import { calendarCells, DEMO_DATE, money } from "../../packages/core/model.mjs";
+import { consolidateInvoices } from "../../packages/core/billing.mjs";
 import { Child, useSchool } from "./src/session";
 
 type IconName = React.ComponentProps<typeof Feather>["name"];
@@ -44,6 +45,13 @@ type Page =
   | "materials"
   | "event";
 const photo = require("./assets/atelier.png");
+const childPhotos: Record<
+  string,
+  React.ComponentProps<typeof Image>["source"]
+> = {
+  lia: require("./assets/lia-avatar.png"),
+  bento: require("./assets/bento-avatar.png"),
+};
 const dateLabel = (date: string) =>
   new Date(`${date}T12:00:00`).toLocaleDateString("pt-BR", {
     day: "numeric",
@@ -166,9 +174,18 @@ function Avatar({ child, size = 44 }: { child: Child; size?: number }) {
         },
       ]}
     >
-      <Copy bold size={size * 0.3} color={C.blue}>
-        {child.initials}
-      </Copy>
+      {childPhotos[child.id] ? (
+        <Image
+          source={childPhotos[child.id]}
+          accessibilityLabel={`Foto ilustrativa de ${child.name}`}
+          style={{ width: size, height: size, borderRadius: size / 2 }}
+          resizeMode="cover"
+        />
+      ) : (
+        <Copy bold size={size * 0.3} color={C.blue}>
+          {child.initials}
+        </Copy>
+      )}
     </View>
   );
 }
@@ -337,7 +354,8 @@ function SchoolApp() {
   const [childId, setChildId] = useState("all"),
     [sheet, setSheet] = useState(false);
   const [noticeId, setNoticeId] = useState("n-passeio"),
-    [invoiceId, setInvoiceId] = useState("i-lia-oct");
+    [invoiceId, setInvoiceId] = useState("family-open");
+  const [showComposition, setShowComposition] = useState(false);
   const [filter, setFilter] = useState("all"),
     [chatId, setChatId] = useState("lia");
   const [message, setMessage] = useState(""),
@@ -369,8 +387,25 @@ function SchoolApp() {
     (r) => r.childId === (selected?.id || scope[0]?.id) && r.date === dayDate,
   );
   const current = selected || scope[0],
-    notice = data.notices.find((n) => n.id === noticeId),
-    invoice = data.invoices.find((i) => i.id === invoiceId);
+    notice = data.notices.find((n) => n.id === noticeId);
+  const familyInvoices = data.invoices.filter((i) =>
+    children.some((c) => c.id === i.childId),
+  );
+  const charges = consolidateInvoices(familyInvoices);
+  const checkoutInvoices =
+    invoiceId === "family-open"
+      ? familyInvoices.filter((i) => i.status === "open")
+      : charges.find((c) => c.id === invoiceId)?.invoices || [];
+  const checkoutAmount = checkoutInvoices.reduce(
+    (total, i) => total + i.amount,
+    0,
+  );
+  const checkoutStatus = checkoutInvoices[0]?.status;
+  const checkoutDue = checkoutInvoices.map((i) => i.due).sort()[0];
+  const checkoutReference = [
+    ...new Set(checkoutInvoices.map((i) => i.reference)),
+  ].join(" · ");
+  const familyNames = children.map((c) => c.name).join(" e ");
   const notices = data.notices.filter((n) =>
     n.childIds.some((id) => scope.some((c) => c.id === id)),
   );
@@ -996,14 +1031,20 @@ function SchoolApp() {
           </>
         ) : null;
       case "finance": {
-        const bills = data.invoices.filter((i) =>
-          scope.some((c) => c.id === i.childId),
-        );
         const status = filter === "paid" ? "paid" : "open";
+        const periods = charges.filter((c) => c.status === status);
+        const total = periods.reduce((sum, c) => sum + c.amount, 0);
         return (
           <>
-            <Heading>Mensalidades{"\n"}em um lugar.</Heading>
-            {selector}
+            <Heading sub="Uma visão para todos os seus filhos.">
+              Financeiro da{"\n"}família.
+            </Heading>
+            <View style={[s.row, { marginBottom: 20 }]}>
+              {children.map((c) => (
+                <Avatar key={c.id} child={c} size={42} />
+              ))}
+              <Copy bold>{familyNames}</Copy>
+            </View>
             <Chips
               items={[
                 { id: "all", label: "Em aberto" },
@@ -1012,116 +1053,174 @@ function SchoolApp() {
               value={filter}
               onChange={setFilter}
             />
-            <Card tone="sky" style={{ marginTop: 20 }}>
-              <Copy bold size={10} color={C.muted}>
-                {status === "open" ? "TOTAL EM ABERTO" : "TOTAL PAGO"}
+            <Card tone="blue" style={{ marginTop: 20 }}>
+              <Copy bold size={10} color={C.white}>
+                {status === "open"
+                  ? "TOTAL DA FAMÍLIA EM ABERTO"
+                  : "TOTAL PAGO PELA FAMÍLIA"}
               </Copy>
-              <Text style={s.amount}>
-                {money(
-                  bills
-                    .filter((i) => i.status === status)
-                    .reduce((v, i) => v + i.amount, 0),
-                )}
-              </Text>
+              <Text style={[s.amount, { color: C.white }]}>{money(total)}</Text>
+              <Copy color={C.white}>
+                As mensalidades dos seus filhos, juntas.
+              </Copy>
             </Card>
-            {bills
-              .filter((i) => i.status === status)
-              .map((i) => (
-                <Card key={i.id}>
-                  <ChildTag child={children.find((c) => c.id === i.childId)!} />
-                  <Copy size={12} color={C.muted}>
-                    Mensalidade · {i.reference}
-                  </Copy>
-                  <Copy bold size={24}>
-                    {money(i.amount)}
-                  </Copy>
-                  <Copy
-                    size={11}
-                    color={i.status === "paid" ? C.green : C.muted}
-                  >
-                    {i.status === "paid"
-                      ? "Pago"
-                      : `Vence em ${dateLabel(i.due)}`}
-                  </Copy>
-                  <Button
-                    onPress={() => {
-                      setInvoiceId(i.id);
-                      go("invoice");
-                    }}
-                  >
-                    {i.status === "paid"
-                      ? "Ver comprovante ilustrativo"
-                      : "Ver cobrança"}
-                  </Button>
-                </Card>
-              ))}
+            {status === "open" && total > 0 && (
+              <Button
+                onPress={() => {
+                  setInvoiceId("family-open");
+                  setShowComposition(false);
+                  go("invoice");
+                }}
+              >
+                Pagar total da família
+              </Button>
+            )}
+            <Copy bold size={18} style={{ marginTop: 20, marginBottom: 12 }}>
+              {status === "open"
+                ? "Cobranças da família"
+                : "Histórico da família"}
+            </Copy>
+            {periods.map((charge) => (
+              <Card key={charge.id} tone="sky">
+                <Copy bold size={20}>
+                  {charge.reference}
+                </Copy>
+                <Copy color={C.muted}>
+                  {new Set(charge.invoices.map((i) => i.childId)).size}{" "}
+                  {new Set(charge.invoices.map((i) => i.childId)).size === 1
+                    ? "matrícula incluída"
+                    : "matrículas incluídas"}
+                </Copy>
+                <Copy bold size={24}>
+                  {money(charge.amount)}
+                </Copy>
+                <Copy size={12} color={status === "paid" ? C.green : C.muted}>
+                  {status === "paid"
+                    ? "Pago"
+                    : `Vencimento: ${dateLabel(charge.due)}`}
+                </Copy>
+                <Button
+                  outline
+                  onPress={() => {
+                    setInvoiceId(charge.id);
+                    setShowComposition(false);
+                    go("invoice");
+                  }}
+                >
+                  {status === "paid" ? "Ver pagamento" : "Ver detalhes"}
+                </Button>
+              </Card>
+            ))}
+            {periods.length === 0 && (
+              <Card tone="lime">
+                <Copy>
+                  {status === "open"
+                    ? "Tudo em dia! Nenhuma cobrança em aberto."
+                    : "Nenhum pagamento registrado ainda."}
+                </Copy>
+              </Card>
+            )}
             <Copy size={11} color={C.muted}>
-              Acesso do responsável financeiro · valores ilustrativos
+              Valores ilustrativos · pagamento conjunto depende da integração
+              financeira.
             </Copy>
           </>
         );
       }
       case "invoice":
-        return invoice ? (
+        return checkoutInvoices.length > 0 ? (
           <>
-            <ChildTag child={children.find((c) => c.id === invoice.childId)!} />
-            <Heading sub={invoice.reference}>Mensalidade.</Heading>
-            <Card tone="sky">
-              <Copy size={11} bold>
-                ESCOLA SEMENTE
+            <Heading sub={checkoutReference}>
+              {checkoutStatus === "open"
+                ? "Um pagamento.\nToda a família."
+                : "Pagamento da\nfamília."}
+            </Heading>
+            <View style={[s.row, { marginBottom: 20 }]}>
+              {children
+                .filter((c) => checkoutInvoices.some((i) => i.childId === c.id))
+                .map((c) => (
+                  <Avatar key={c.id} child={c} size={52} />
+                ))}
+              <Copy bold>{actor.name} · responsável</Copy>
+            </View>
+            <Card tone="blue">
+              <Copy bold size={11} color={C.white}>
+                {data.school.name.toUpperCase()} · TOTAL DA FAMÍLIA
               </Copy>
-              <Text style={s.amount}>{money(invoice.amount)}</Text>
-              <Copy color={invoice.status === "paid" ? C.green : C.muted}>
-                {invoice.status === "paid" ? "Pago" : "Em aberto"} ·{" "}
-                {dateLabel(invoice.due)}
+              <Text style={[s.amount, { color: C.white }]}>
+                {money(checkoutAmount)}
+              </Text>
+              <Copy color={C.white}>
+                {checkoutStatus === "paid"
+                  ? "Pago"
+                  : `Vence em ${dateLabel(checkoutDue)}`}
               </Copy>
             </Card>
-            {[
-              ["Aluno", children.find((c) => c.id === invoice.childId)?.name],
-              ["Referência", invoice.reference],
-              ["Valor", money(invoice.amount)],
-              ["Juros e multa", "R$ 0,00"],
-              ["Total", money(invoice.amount)],
-            ].map(([label, value]) => (
-              <View key={label} style={[s.row, s.detailRow]}>
-                <Copy color={C.muted}>{label}</Copy>
-                <Copy bold>{value}</Copy>
-              </View>
-            ))}
-            {invoice.status === "open" ? (
+            {checkoutStatus === "open" ? (
               <>
-                <Copy bold size={18} style={{ marginTop: 20 }}>
-                  Como prefere pagar?
+                <Copy bold size={18} style={{ marginTop: 8 }}>
+                  Como prefere pagar o total?
                 </Copy>
                 <Row
-                  title="Pix"
-                  sub="Confirmação após processamento"
+                  title="Pix único"
+                  sub={`Total da família · ${money(checkoutAmount)}`}
                   icon="grid"
                   onPress={() =>
                     setDialog({
-                      title: "Pagamento demonstrativo",
-                      body: "A integração com o provedor de pagamentos será configurada na próxima etapa. Nenhum Pix real é gerado ou cobrado nesta demonstração.",
+                      title: "Pix da família · demonstração",
+                      body: `O pagamento conjunto de ${money(checkoutAmount)} reunirá as mensalidades incluídas. A integração com o provedor ainda está pendente; nenhum Pix real é gerado.`,
                     })
                   }
                 />
                 <Row
-                  title="Boleto"
-                  sub="Copiar código ou baixar"
+                  title="Boleto único"
+                  sub="Todas as mensalidades em um boleto"
                   icon="file-text"
                   onPress={() =>
                     setDialog({
-                      title: "Boleto demonstrativo",
-                      body: "A cobrança real depende da integração financeira da escola. Não há boleto válido nesta versão.",
+                      title: "Boleto da família · demonstração",
+                      body: `O boleto conjunto terá o total de ${money(checkoutAmount)}. Esta versão ainda não emite boleto válido.`,
                     })
                   }
                 />
               </>
             ) : (
-              <Card tone="sky">
+              <Card tone="lime">
                 <Copy>
-                  Pagamento ilustrativo de setembro. A emissão de comprovantes
-                  reais depende do provedor financeiro.
+                  Pagamento ilustrativo registrado. Comprovantes reais dependem
+                  da integração financeira.
                 </Copy>
+              </Card>
+            )}
+            <Row
+              title={
+                showComposition
+                  ? "Ocultar composição"
+                  : "Ver composição do total"
+              }
+              sub="Confira o que está incluído"
+              icon="list"
+              onPress={() => setShowComposition((v) => !v)}
+            />
+            {showComposition && (
+              <Card tone="sky">
+                {checkoutInvoices.map((i) => (
+                  <View key={i.id} style={[s.row, s.detailRow]}>
+                    <View style={{ flex: 1 }}>
+                      <Copy bold>
+                        {children.find((c) => c.id === i.childId)?.name}
+                      </Copy>
+                      <Copy size={11} color={C.muted}>
+                        {i.reference}
+                      </Copy>
+                    </View>
+                    <Copy bold>{money(i.amount)}</Copy>
+                  </View>
+                ))}
+                <View style={[s.row, s.detailRow]}>
+                  <Copy bold>Total da família</Copy>
+                  <Copy bold>{money(checkoutAmount)}</Copy>
+                </View>
               </Card>
             )}
             <Button
@@ -1136,7 +1235,11 @@ function SchoolApp() {
               Falar com o financeiro
             </Button>
           </>
-        ) : null;
+        ) : (
+          <Card tone="lime">
+            <Copy>Nenhuma cobrança disponível.</Copy>
+          </Card>
+        );
       case "calendar":
         return (
           <>
