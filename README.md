@@ -50,7 +50,7 @@ cp .env.example .env
 npm run dev:api
 ```
 
-API: http://127.0.0.1:4340. Por padrão inicia em loopback e só aceita sessões de demonstração se `THINKEDU_DEMO=true`. Sem essa opção, apenas `/health` está disponível. O modo demonstrativo permite escolher perfis conhecidos sem senha e **não pode ser exposto como autenticação de produção**.
+API: http://127.0.0.1:4340. Por padrão inicia em loopback e só aceita sessões de demonstração se `THINKEDU_DEMO=true`. Sem essa opção, `/health` e o endpoint público de versões `/app/version` estão disponíveis. O modo demonstrativo permite escolher perfis conhecidos sem senha e **não pode ser exposto como autenticação de produção**.
 
 Para conectar as interfaces, reinicie seus servidores com estas variáveis:
 
@@ -107,3 +107,7 @@ CI executa esses comandos em Node 22. Os testes verificam isolamento, permissõe
 Esta entrega é uma base demonstrativa funcional. Antes de operar uma escola real, implementar autenticação com convites verificados, vínculos e permissões administráveis, banco relacional/migrações, armazenamento privado de fotos, consentimentos e retenção, notificações, monitoramento e backups. Integração financeira exige provedor, webhooks idempotentes e conciliação. Captura/upload de fotos, registros em lote, busca avançada e exportações ainda não estão implementados.
 
 Confira [arquitetura e próximos marcos](docs/architecture.md) e [limites de segurança](docs/security.md).
+
+## Administrativo web
+
+[Fluxos administrativos e limites da demonstração](docs/administrativo-web.md). [Configuração do aviso de atualização](docs/atualizacoes.md).

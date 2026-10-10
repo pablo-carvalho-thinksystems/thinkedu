@@ -10,6 +10,8 @@ import {
   applyCommand,
 } from "../../packages/core/model.mjs";
 
+import { releasePolicy } from "../../packages/core/release.mjs";
+
 const demo = process.env.THINKEDU_DEMO === "true";
 const path =
   process.env.THINKEDU_DATA_FILE ||
@@ -63,6 +65,24 @@ const server = createServer(async (req, res) => {
     const route = new URL(req.url, "http://localhost").pathname;
     if (route === "/health")
       return send(200, { name: "thinkEdu", status: "ok", demo });
+    if (route === "/app/version" && req.method === "GET") {
+      const platform = new URL(req.url, "http://localhost").searchParams.get(
+        "platform",
+      );
+      if (!["ios", "android"].includes(platform))
+        return send(400, { error: "Plataforma inválida." });
+      let config = {};
+      if (process.env.THINKEDU_RELEASE_FILE) {
+        try {
+          config = JSON.parse(
+            await readFile(process.env.THINKEDU_RELEASE_FILE, "utf8"),
+          );
+        } catch {
+          /* Configuração ausente mantém avisos desativados. */
+        }
+      }
+      return send(200, releasePolicy(config[platform], platform));
+    }
     if (!demo)
       return send(503, {
         error:

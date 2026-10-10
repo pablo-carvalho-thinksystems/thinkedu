@@ -8,10 +8,12 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.thinksystems.thinkedu"
+      "bundleIdentifier": "com.thinksystems.thinkedu",
+      "buildNumber": "1"
     },
     "android": {
-      "package": "com.thinksystems.thinkedu"
+      "package": "com.thinksystems.thinkedu",
+      "versionCode": 1
     },
     "web": {
       "bundler": "metro",

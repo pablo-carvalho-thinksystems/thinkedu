@@ -1,3 +1,4 @@
+import { seedTeacherDay } from "./teacher.mjs";
 import { seedPosts, validateAttachment } from "./mural.mjs";
 export const DEMO_DATE = "2026-10-09";
 export const money = (value) =>
@@ -7,6 +8,7 @@ export const money = (value) =>
 export function createSeed() {
   return {
     version: 1,
+    ...seedTeacherDay(),
     school: { id: "semente", name: "Escola Semente" },
     children: [
       {
@@ -217,6 +219,8 @@ export function accessibleChildren(state, actor) {
 export function upgradeStore(state) {
   return {
     ...state,
+    attendance: state.attendance ?? seedTeacherDay().attendance,
+    activities: state.activities ?? seedTeacherDay().activities,
     posts: (state.posts ?? seedPosts()).map((post) =>
       post.id === "m-video" &&
       post.attachment?.uri ===
@@ -241,6 +245,11 @@ export function visibleState(state, actor) {
   return {
     ...rest,
     children,
+    attendance: state.attendance.filter((a) => ids.has(a.childId)),
+    activities:
+      actor.role === "family"
+        ? []
+        : state.activities.filter((a) => a.childIds.every((id) => ids.has(id))),
     routines: state.routines.filter(
       (r) => ids.has(r.childId) && (actor.role !== "family" || r.published),
     ),
@@ -268,7 +277,14 @@ export function visibleState(state, actor) {
           a.role === "teacher" ||
           (actor.role !== "family" && a.childIds.some((id) => ids.has(id))),
       )
-      .map((a) => ({ id: a.id, name: a.name, role: a.role })),
+      .map((a) => ({
+        id: a.id,
+        name: a.name,
+        role: a.role,
+        ...(actor.role === "admin"
+          ? { childIds: a.childIds, classIds: a.classIds }
+          : {}),
+      })),
     audit: actor.role === "admin" ? audit : [],
   };
 }
@@ -313,7 +329,114 @@ export function applyCommand(
   };
   const next = structuredClone(upgradeStore(state)),
     type = command?.type;
-  if (type === "mural.create") {
+  const timeValid = (value) =>
+    typeof value === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+  if (type === "student.create") {
+    if (actor.role !== "admin")
+      fail("Somente a direção pode cadastrar alunos.", 403);
+    const group = next.children.find(
+      (c) => c.classId === command.classId,
+    )?.group;
+    if (!group) fail("Selecione uma turma cadastrada.");
+    const name = text(command.name, 100);
+    let guardian;
+    if (command.guardianId) {
+      guardian = next.actors.find(
+        (a) =>
+          a.id === command.guardianId &&
+          a.role === "family" &&
+          a.schoolId === next.school.id,
+      );
+      if (!guardian) fail("Responsável não encontrado.");
+    } else {
+      guardian = {
+        id: id(),
+        name: text(command.guardianName, 100),
+        role: "family",
+        schoolId: next.school.id,
+        childIds: [],
+        classIds: [],
+        financial: true,
+      };
+      next.actors.push(guardian);
+    }
+    const childId = id();
+    next.children.push({
+      id: childId,
+      name,
+      classId: command.classId,
+      group,
+      initials: name
+        .split(/\s+/)
+        .slice(0, 2)
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase(),
+      tone: "sky",
+      arrival: "—",
+    });
+    guardian.childIds.push(childId);
+  } else if (type === "attendance.save") {
+    teacher();
+    requireChild(command.childId);
+    if (
+      !validDate(command.date) ||
+      !["present", "absent", "left"].includes(command.status) ||
+      typeof command.note !== "string" ||
+      command.note.length > 1000
+    )
+      fail("Revise os campos da chamada.");
+    if (command.status !== "absent" && !timeValid(command.arrival))
+      fail("Informe o horário de entrada (HH:MM).");
+    if (
+      command.status === "left" &&
+      (!timeValid(command.departure) || command.departure < command.arrival)
+    )
+      fail("A saída deve ser posterior ou igual à entrada.");
+    const entry = {
+      id: `a-${command.childId}-${command.date}`,
+      childId: command.childId,
+      date: command.date,
+      status: command.status,
+      arrival: command.status === "absent" ? null : command.arrival,
+      departure: command.status === "left" ? command.departure : null,
+      note: command.note.trim(),
+      updatedAt: now,
+    };
+    next.attendance = next.attendance.filter(
+      (a) => !(a.childId === entry.childId && a.date === entry.date),
+    );
+    next.attendance.push(entry);
+  } else if (type === "activity.create") {
+    teacher();
+    if (
+      !validDate(command.date) ||
+      !timeValid(command.time) ||
+      !Array.isArray(command.childIds) ||
+      !command.childIds.length
+    )
+      fail("Revise data, horário e turma da atividade.");
+    command.childIds.forEach(requireChild);
+    next.activities.push({
+      id: id(),
+      title: text(command.title, 150),
+      description: text(command.description, 2000),
+      date: command.date,
+      time: command.time,
+      childIds: [...new Set(command.childIds)],
+      status: "planned",
+      updatedAt: now,
+    });
+  } else if (type === "activity.status") {
+    teacher();
+    const activity = next.activities.find((a) => a.id === command.activityId);
+    if (!activity) fail("Atividade não encontrada.", 404);
+    activity.childIds.forEach(requireChild);
+    if (!["planned", "done"].includes(command.status))
+      fail("Status de atividade inválido.");
+    activity.status = command.status;
+    activity.updatedAt = now;
+  } else if (type === "mural.create") {
     teacher();
     if (!Array.isArray(command.childIds) || !command.childIds.length)
       fail("Selecione os destinatários.");
@@ -461,7 +584,7 @@ export function applyCommand(
     actorId: actor.id,
     type,
     at: now,
-    subject: command.childId || command.noticeId || null,
+    subject: command.childId || command.noticeId || command.activityId || null,
   });
   return next;
 }

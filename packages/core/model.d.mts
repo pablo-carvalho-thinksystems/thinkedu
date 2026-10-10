@@ -16,6 +16,26 @@ export interface Actor {
   classIds: string[];
   financial: boolean;
 }
+export interface Attendance {
+  id: string;
+  childId: string;
+  date: string;
+  status: string;
+  arrival: string | null;
+  departure: string | null;
+  note: string;
+  updatedAt: string;
+}
+export interface LearningActivity {
+  id: string;
+  title: string;
+  description: string;
+  date: string;
+  time: string;
+  childIds: string[];
+  status: string;
+  updatedAt: string;
+}
 export interface Routine {
   id: string;
   childId: string;
@@ -92,15 +112,27 @@ export interface MuralPost {
   authorId: string;
   createdAt: string;
 }
-export function upgradeStore<T extends { posts?: MuralPost[] }>(
+export function upgradeStore<
+  T extends {
+    posts?: MuralPost[];
+    attendance?: Attendance[];
+    activities?: LearningActivity[];
+  },
+>(
   state: T,
-): T & { posts: MuralPost[] };
+): T & {
+  posts: MuralPost[];
+  attendance: Attendance[];
+  activities: LearningActivity[];
+};
 export interface Store {
   version: number;
   school: { id: string; name: string };
   children: Child[];
   actors: Actor[];
   routines: Routine[];
+  attendance: Attendance[];
+  activities: LearningActivity[];
   notices: Notice[];
   messages: Message[];
   invoices: Invoice[];
@@ -109,7 +141,13 @@ export interface Store {
   audit: AuditEntry[];
 }
 export interface VisibleStore extends Omit<Store, "actors"> {
-  actors: { id: string; name: string; role: string }[];
+  actors: {
+    id: string;
+    name: string;
+    role: string;
+    childIds?: string[];
+    classIds?: string[];
+  }[];
 }
 export const DEMO_DATE: string;
 export function money(value: number): string;

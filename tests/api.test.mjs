@@ -43,6 +43,10 @@ test("API: sessão, isolamento, comandos e persistência entre perfis", async ()
         ...(body ? { body: JSON.stringify(body) } : {}),
       });
     assert.equal((await request("/state")).status, 401);
+    assert.equal((await request("/app/version?platform=desktop")).status, 400);
+    const release = await (await request("/app/version?platform=ios")).json();
+    assert.equal(release.enabled, false);
+    assert.equal(release.storeUrl, "");
     assert.equal(
       (await request("/health", null, null, "https://untrusted.example"))
         .status,

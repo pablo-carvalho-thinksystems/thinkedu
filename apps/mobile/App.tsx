@@ -34,10 +34,14 @@ import * as DocumentPicker from "expo-document-picker";
 import { Directory, File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { useVideoPlayer, VideoView } from "expo-video";
+import { VersionNotice } from "./src/VersionNotice";
+import { TeacherWorkspace, type TeacherPage } from "./src/TeacherWorkspace";
+import { attendanceLabel } from "../../packages/core/teacher.mjs";
 import { Child, useSchool } from "./src/session";
 
 type IconName = React.ComponentProps<typeof Feather>["name"];
 type Page =
+  | TeacherPage
   | "home"
   | "day"
   | "moments"
@@ -431,11 +435,26 @@ function SchoolApp() {
     [eventTime, setEventTime] = useState("08:30"),
     [place, setPlace] = useState("Escola Semente");
   const [dayDate, setDayDate] = useState(DEMO_DATE);
+  const [teacherDate, setTeacherDate] = useState(DEMO_DATE),
+    [teacherClassId, setTeacherClassId] = useState("jardim"),
+    [teacherStudentId, setTeacherStudentId] = useState("lia");
   const { width } = useWindowDimensions(),
     family = actor.role === "family";
   const children = data.children as Child[],
     selected = children.find((c) => c.id === childId),
-    scope = selected ? [selected] : children;
+    scope = selected
+      ? [selected]
+      : family
+        ? children
+        : children.filter(
+            (c) =>
+              c.classId ===
+              (children.some((c) => c.classId === teacherClassId)
+                ? teacherClassId
+                : children[0]?.classId),
+          );
+  const attendanceRecord = (id: string, date = DEMO_DATE) =>
+    data.attendance.find((a) => a.childId === id && a.date === date);
   const agendaEvents = family
     ? eventsForChild(data.events, currentAgendaId())
     : data.events.filter((e) =>
@@ -576,6 +595,7 @@ function SchoolApp() {
     setHistory((h) => h.slice(0, -1));
   }
   function tab(next: Page) {
+    if (!family) setChildId("all");
     setPage(next);
     setHistory([]);
     setFilter("all");
@@ -583,6 +603,7 @@ function SchoolApp() {
   function role(id: string) {
     if (busy) return;
     school.switchRole(id);
+    setTeacherDate(DEMO_DATE);
     setChildId("all");
     setPage(id === "rafael" ? "home" : "classroom");
     setHistory([]);
@@ -600,7 +621,7 @@ function SchoolApp() {
   }
   function openRoutine(c: Child) {
     const r = data.routines.find(
-      (r) => r.childId === c.id && r.date === DEMO_DATE,
+      (r) => r.childId === c.id && r.date === teacherDate,
     );
     setChildId(c.id);
     setMeal(r?.meal || "Bem");
@@ -609,6 +630,27 @@ function SchoolApp() {
     setHygiene(r?.hygiene || "Não registrado");
     setNote(r?.note || "");
     go("routine");
+  }
+  function goTeacher(next: TeacherPage, child?: Child) {
+    if (child) {
+      setTeacherStudentId(child.id);
+      setTeacherClassId(child.classId);
+    }
+    if (
+      (page === "teacherAttendanceEdit" && next === "teacherAttendance") ||
+      (page === "teacherActivity" && next === "teacherPlan")
+    ) {
+      setPage(next);
+      setHistory((h) => h.slice(0, -1));
+    } else go(next);
+  }
+  function composeForChild(child: Child) {
+    setKind("update");
+    setTitle("");
+    setBody("");
+    setChildId(child.id);
+    setRecipients([child.id]);
+    go("compose");
   }
   function openCompose(type = "update") {
     setKind(type);
@@ -630,7 +672,7 @@ function SchoolApp() {
           <Avatar child={selected} size={36} />
         ) : (
           <View style={s.row}>
-            {children.slice(0, 2).map((c) => (
+            {scope.slice(0, 2).map((c) => (
               <Avatar key={c.id} child={c} size={32} />
             ))}
           </View>
@@ -641,7 +683,7 @@ function SchoolApp() {
               ? `${selected.name} · ${selected.group}`
               : family
                 ? "Todos os filhos"
-                : "Toda a turma"}
+                : `Turma ${children.find((c) => c.classId === teacherClassId)?.group || "selecionada"}`}
           </Copy>
           <Copy size={10} color={C.muted}>
             {data.school.name}
@@ -772,7 +814,7 @@ function SchoolApp() {
                       </Copy>
                       <Copy size={12}>{c.group}</Copy>
                       <Copy size={11} color={C.green}>
-                        ● Na escola · {c.arrival}
+                        ● {attendanceLabel(attendanceRecord(c.id))}
                       </Copy>
                     </View>
                     <Icon name="arrow-up-right" color={C.blue} />
@@ -834,10 +876,13 @@ function SchoolApp() {
                 {(
                   [
                     {
-                      time: current.arrival,
+                      time:
+                        attendanceRecord(current.id, dayDate)?.arrival || "—",
                       icon: "log-in",
-                      title: "Entrada",
-                      detail: "Recebida pela equipe da escola",
+                      title: "Chamada",
+                      detail: attendanceLabel(
+                        attendanceRecord(current.id, dayDate),
+                      ),
                     },
                     {
                       time: "9h30",
@@ -1981,103 +2026,53 @@ function SchoolApp() {
           </>
         );
       case "classroom":
+      case "teacherAttendance":
+      case "teacherAttendanceEdit":
+      case "teacherPlan":
+      case "teacherActivity":
+      case "teacherStudents":
+      case "teacherStudent":
         return (
-          <>
-            <Heading>Bom dia, {actor.name}!</Heading>
-            <Row
-              title="Mural da escola"
-              sub="Compartilhe textos, vídeos e arquivos"
-              icon="book-open"
-              onPress={() => go("mural")}
-            />
-            {selector}
-            <View style={[s.row, { marginBottom: 16 }]}>
-              <Card tone="sky" style={{ flex: 1, marginBottom: 0 }}>
-                <Copy size={26} bold>
-                  {scope.length}
-                </Copy>
-                <Copy size={11}>alunos na demonstração</Copy>
-              </Card>
-              <Card tone="peach" style={{ flex: 1, marginBottom: 0 }}>
-                <Copy size={26} bold>
-                  {
-                    scope.filter((c) =>
-                      data.routines.some(
-                        (r) => r.childId === c.id && r.published,
-                      ),
-                    ).length
-                  }
-                </Copy>
-                <Copy size={11}>rotinas publicadas</Copy>
-              </Card>
-            </View>
-            <Card tone="blue">
-              <Copy bold size={25} color={C.white}>
-                O dia da turma
-              </Copy>
-              <Copy color={C.white}>
-                Registre uma vez. Ajuste cada criança.
-              </Copy>
-              <Button
-                outline
-                tone="orange"
-                onPress={() => openRoutine(scope[0])}
-              >
-                Continuar rotina
-              </Button>
-            </Card>
-            <Row
-              title="Conversar com as famílias"
-              icon="message-circle"
-              onPress={() => tab("inbox")}
-            />
-            <Row
-              title="Materiais e necessidades"
-              icon="package"
-              onPress={() => go("materials")}
-            />
-            <Copy bold size={18} style={{ marginVertical: 16 }}>
-              Alunos
-            </Copy>
-            {scope.map((c) => (
-              <Pressable
-                accessibilityRole="button"
-                key={c.id}
-                onPress={() => openRoutine(c)}
-                style={s.studentRow}
-              >
-                <Avatar child={c} />
-                <View style={{ flex: 1 }}>
-                  <Copy bold>{c.name}</Copy>
-                  <Copy size={11} color={C.muted}>
-                    {c.group}
-                  </Copy>
-                </View>
-                <Copy
-                  size={11}
-                  color={
-                    data.routines.some((r) => r.childId === c.id && r.published)
-                      ? C.green
-                      : C.orange
-                  }
-                >
-                  {data.routines.some((r) => r.childId === c.id && r.published)
-                    ? "Rotina pronta"
-                    : "Registrar"}
-                </Copy>
-                <Icon name="chevron-right" size={17} />
-              </Pressable>
-            ))}
-            <Button tone="orange" icon="plus" onPress={() => openCompose()}>
-              Novo comunicado
-            </Button>
-          </>
+          <TeacherWorkspace
+            page={page}
+            data={data}
+            actor={actor}
+            busy={busy}
+            classId={teacherClassId}
+            date={teacherDate}
+            studentId={teacherStudentId}
+            onClass={(id) => {
+              setTeacherClassId(id);
+              setChildId("all");
+            }}
+            onDate={setTeacherDate}
+            onGo={goTeacher}
+            onCommand={dispatch}
+            onRoutine={openRoutine}
+            onChat={(c) => {
+              setChatId(c.id);
+              go("chat");
+            }}
+            onCompose={(c) => (c ? composeForChild(c) : openCompose())}
+            onMural={() => {
+              setChildId("all");
+              go("mural");
+            }}
+            onMaterials={() => {
+              setChildId("all");
+              go("materials");
+            }}
+            onCalendar={() => {
+              setChildId("all");
+              go("calendar");
+            }}
+          />
         );
       case "routine":
         return (
           <>
             {selector}
-            <Heading sub="Sexta, 9 de outubro">
+            <Heading sub={fullDate(teacherDate)}>
               Cada detalhe{"\n"}conta.
             </Heading>
             <Card tone="sky">
@@ -2133,7 +2128,7 @@ function SchoolApp() {
                   await dispatch({
                     type: "routine.save",
                     childId: current.id,
-                    date: DEMO_DATE,
+                    date: teacherDate,
                     meal,
                     sleep: Number(sleep),
                     mood,
@@ -2159,6 +2154,17 @@ function SchoolApp() {
         return (
           <>
             <Heading>Perto das{"\n"}famílias.</Heading>
+            <Row
+              title="Mural da escola"
+              sub="Textos, vídeos e materiais"
+              icon="book-open"
+              onPress={() => go("mural")}
+            />
+            <Row
+              title="Materiais e autorizações"
+              icon="package"
+              onPress={() => go("materials")}
+            />
             {selector}
             {scope.map((c) => {
               const last = data.messages
@@ -2519,34 +2525,48 @@ function SchoolApp() {
         ]
       : [
           {
-            label: "Turma",
-            icon: "users",
+            label: "Hoje",
+            icon: "home",
             page: "classroom",
             active: [
               "classroom",
-              "routine",
-              "mural",
-              "muralPost",
-              "muralCompose",
+              "teacherAttendance",
+              "teacherAttendanceEdit",
             ].includes(page),
           },
           {
-            label: "Mensagens",
-            icon: "message-circle",
-            page: "inbox",
-            active: ["inbox", "chat", "compose", "notice"].includes(page),
+            label: "Turma",
+            icon: "users",
+            page: "teacherStudents",
+            active: ["teacherStudents", "teacherStudent", "routine"].includes(
+              page,
+            ),
           },
           {
             label: "Agenda",
             icon: "calendar",
-            page: "calendar",
-            active: ["calendar", "materials", "event"].includes(page),
+            page: "teacherPlan",
+            active: [
+              "teacherPlan",
+              "teacherActivity",
+              "calendar",
+              "event",
+            ].includes(page),
           },
           {
-            label: "Mais",
-            icon: "more-horizontal",
-            page: "profile",
-            active: page === "profile",
+            label: "Famílias",
+            icon: "message-circle",
+            page: "inbox",
+            active: [
+              "inbox",
+              "chat",
+              "compose",
+              "notice",
+              "mural",
+              "muralPost",
+              "muralCompose",
+              "materials",
+            ].includes(page),
           },
         ];
   return (
@@ -2682,7 +2702,11 @@ function SchoolApp() {
             <Heading flower={false}>Quem vamos{"\n"}acompanhar?</Heading>
             <ScrollView style={{ maxHeight: 340 }}>
               <Row
-                title={family ? "Todos os filhos" : "Toda a turma"}
+                title={
+                  family
+                    ? "Todos os filhos"
+                    : `Turma ${children.find((c) => c.classId === teacherClassId)?.group || "selecionada"}`
+                }
                 icon="users"
                 onPress={() => {
                   if (page !== "routine") setChildId("all");
@@ -2699,6 +2723,7 @@ function SchoolApp() {
                   accessibilityRole="button"
                   key={c.id}
                   onPress={() => {
+                    if (!family) setTeacherClassId(c.classId);
                     if (page === "routine") openRoutine(c);
                     else setChildId(c.id);
                     setSheet(false);
@@ -2762,7 +2787,7 @@ function SchoolApp() {
                     ? {
                         type: "routine.save",
                         childId: current.id,
-                        date: DEMO_DATE,
+                        date: teacherDate,
                         meal,
                         sleep: Number(sleep),
                         mood,
@@ -2838,6 +2863,7 @@ export default function App() {
           </Text>
         </View>
       )}
+      <VersionNotice />
     </SafeAreaProvider>
   );
 }
