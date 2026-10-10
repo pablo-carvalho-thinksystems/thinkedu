@@ -92,6 +92,7 @@ export function useSchool() {
     }
   }
   function switchRole(id: string) {
+    if (id === actorId || locking.current) return;
     setReady(false);
     setActorId(id);
   }

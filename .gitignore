@@ -5,3 +5,7 @@ dist/
 *.tsbuildinfo
 apps/api/data/*.json
 .DS_Store
+/build/
+# Projetos nativos gerados pelo Expo Prebuild (CNG).
+/apps/mobile/ios/
+/apps/mobile/android/

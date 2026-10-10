@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "dev:mobile": "npm run start --workspace @thinkedu/mobile",
+    "ios:simulator": "npm run ios --workspace @thinkedu/mobile -- --configuration Release --no-bundler",
     "dev:web": "npm run web --workspace @thinkedu/mobile",
     "dev:admin": "npm run dev --workspace @thinkedu/admin",
     "dev:api": "node --env-file-if-exists=.env apps/api/start.mjs",

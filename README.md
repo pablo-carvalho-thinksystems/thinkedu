@@ -29,7 +29,19 @@ npm run dev:admin
 
 Direção: http://127.0.0.1:4342.
 
-Para desenvolvimento em dispositivo, execute `npm run dev:mobile`. A validação desta entrega foi feita na web; os binários Android/iOS ainda não foram gerados nem testados em aparelhos.
+Para desenvolvimento em dispositivo, execute `npm run dev:mobile`. A versão iOS foi compilada em Release, instalada e aberta no iPhone 17 Pro Max com iOS 26.5. Android e aparelhos físicos ainda não foram validados.
+
+### Simulador iOS
+
+No macOS com Xcode e CocoaPods instalados:
+
+```sh
+npm run ios:simulator -- --device "iPhone 17 Pro Max"
+```
+
+O Expo gera o projeto iOS, instala os pods, empacota o código e instala o aplicativo no simulador. A configuração Release inclui o código e os recursos no aplicativo e não depende de Metro para abrir. Os diretórios nativos são gerados por Expo Prebuild e ficam fora do Git; a configuração versionada está em `apps/mobile/app.json`.
+
+Detalhes da verificação e caminho do artefato: [compilação iOS](docs/ios-simulator.md).
 
 ### API demonstrativa compartilhada
 

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -401,6 +402,7 @@ function SchoolApp() {
     setFilter("all");
   }
   function role(id: string) {
+    if (busy) return;
     school.switchRole(id);
     setChildId("all");
     setPage(id === "rafael" ? "home" : "classroom");
@@ -609,7 +611,8 @@ function SchoolApp() {
               icon="arrow-right"
               onPress={() => tab("notices")}
             >
-              {pending.length} {pending.length === 1 ? "pendência" : "pendências"} da família
+              {pending.length}{" "}
+              {pending.length === 1 ? "pendência" : "pendências"} da família
             </Button>
             <Row
               title="Próximos eventos"
@@ -1877,74 +1880,86 @@ function SchoolApp() {
           Platform.OS === "web" && width > 700 && s.phoneDesktop,
         ]}
       >
-        <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
-          <View style={s.demoBar}>
-            <Copy size={10} color={C.muted}>
-              DEMO ·{" "}
-              {school.connected ? "API conectada" : "salvo neste dispositivo"}
-            </Copy>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => role(family ? "ana" : "rafael")}
-            >
-              <Copy bold color={C.blue} size={10}>
-                {family ? "Ver educadora" : "Ver família"} ⇄
-              </Copy>
-            </Pressable>
-          </View>
-          {school.ready ? (
-            <>
-              <ScrollView
-                key={page}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={s.content}
-              >
-                {screenHeader}
-                {content()}
-              </ScrollView>
-              <View style={s.dockWrap}>
-                <View style={s.dock}>
-                  {tabs.map((t) => (
-                    <Pressable
-                      accessibilityRole="tab"
-                      accessibilityState={{ selected: t.active }}
-                      accessibilityLabel={t.label}
-                      key={t.label}
-                      onPress={() => tab(t.page)}
-                      style={[
-                        s.navItem,
-                        t.active && { backgroundColor: C.blue },
-                      ]}
-                    >
-                      <Icon name={t.icon} color={t.active ? C.white : C.ink} />
-                      <Copy size={10} bold color={t.active ? C.white : C.ink}>
-                        {t.label}
-                      </Copy>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-            </>
-          ) : (
-            <View style={s.loading}>
-              <ActivityIndicator color={C.blue} />
-              <Copy>Preparando sua escola…</Copy>
-            </View>
-          )}
-          {!!school.error && (
-            <View accessibilityRole="alert" style={s.error}>
-              <Copy color={C.white} size={12} style={{ flex: 1 }}>
-                {school.error}
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
+            <View style={s.demoBar}>
+              <Copy size={10} color={C.muted}>
+                DEMO ·{" "}
+                {school.connected ? "API conectada" : "salvo neste dispositivo"}
               </Copy>
               <Pressable
-                accessibilityLabel="Fechar aviso"
-                onPress={school.clearError}
+                accessibilityRole="button"
+                onPress={() => role(family ? "ana" : "rafael")}
               >
-                <Icon name="x" color={C.white} />
+                <Copy bold color={C.blue} size={10}>
+                  {family ? "Ver educadora" : "Ver família"} ⇄
+                </Copy>
               </Pressable>
             </View>
-          )}
-        </SafeAreaView>
+            {school.ready ? (
+              <>
+                <ScrollView
+                  key={page}
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode={
+                    Platform.OS === "ios" ? "interactive" : "on-drag"
+                  }
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={s.content}
+                >
+                  {screenHeader}
+                  {content()}
+                </ScrollView>
+                <View style={s.dockWrap}>
+                  <View style={s.dock}>
+                    {tabs.map((t) => (
+                      <Pressable
+                        accessibilityRole="tab"
+                        accessibilityState={{ selected: t.active }}
+                        accessibilityLabel={t.label}
+                        key={t.label}
+                        onPress={() => tab(t.page)}
+                        style={[
+                          s.navItem,
+                          t.active && { backgroundColor: C.blue },
+                        ]}
+                      >
+                        <Icon
+                          name={t.icon}
+                          color={t.active ? C.white : C.ink}
+                        />
+                        <Copy size={10} bold color={t.active ? C.white : C.ink}>
+                          {t.label}
+                        </Copy>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              </>
+            ) : (
+              <View style={s.loading}>
+                <ActivityIndicator color={C.blue} />
+                <Copy>Preparando sua escola…</Copy>
+              </View>
+            )}
+            {!!school.error && (
+              <View accessibilityRole="alert" style={s.error}>
+                <Copy color={C.white} size={12} style={{ flex: 1 }}>
+                  {school.error}
+                </Copy>
+                <Pressable
+                  accessibilityLabel="Fechar aviso"
+                  onPress={school.clearError}
+                >
+                  <Icon name="x" color={C.white} />
+                </Pressable>
+              </View>
+            )}
+          </SafeAreaView>
+        </KeyboardAvoidingView>
       </View>
       <Modal
         visible={sheet}
