@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -39,7 +39,27 @@ export function StaffWorkspace({
     [arrival, setArrival] = useState("08:00"),
     [departure, setDeparture] = useState("17:00"),
     [date, setDate] = useState(DEMO_DATE),
-    [search, setSearch] = useState("");
+    [search, setSearch] = useState(""),
+    [limit, setLimit] = useState(16);
+  useEffect(() => {
+    setLimit(16);
+  }, [view, search, data.units.map((u) => u.id).join(",")]);
+  const students = data.children.filter((c) =>
+    `${c.name} ${c.group}`.toLowerCase().includes(search.toLowerCase()),
+  );
+  const families = data.actors.filter((a) => a.role === "family");
+  const more = (total: number) =>
+    limit < total ? (
+      <Pressable
+        accessibilityRole="button"
+        style={s.action}
+        onPress={() => setLimit((v) => v + 16)}
+      >
+        <Text style={s.actionText}>
+          Carregar mais · {Math.min(limit, total)} de {total}
+        </Text>
+      </Pressable>
+    ) : null;
   const action = (label: string, page: string) => (
     <Pressable
       accessibilityRole="button"
@@ -120,71 +140,73 @@ export function StaffWorkspace({
             onChangeText={setSearch}
             style={s.input}
           />
-          {data.children
-            .filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
-            .map((c) => (
-              <View key={c.id} style={s.card}>
-                <Text style={s.heading}>{c.name}</Text>
-                <Text style={s.copy}>{c.group}</Text>
-                {data.actors
-                  .filter(
-                    (a) => a.role === "family" && a.childIds?.includes(c.id),
-                  )
-                  .map((a) => (
-                    <Text key={a.id} style={s.copy}>
-                      Responsável: {a.name}
-                    </Text>
-                  ))}
-                {can(actor, "attendance.read") && (
-                  <Text style={s.copy}>
-                    Presença:{" "}
-                    {(
-                      {
-                        present: "Na escola",
-                        absent: "Ausente",
-                        left: "Saída registrada",
-                      } as Record<string, string>
-                    )[
-                      data.attendance.find(
-                        (a) => a.childId === c.id && a.date === DEMO_DATE,
-                      )?.status || ""
-                    ] || "Não registrada"}
+          <Text style={s.copy}>{students.length} alunos nesta seleção</Text>
+          {students.slice(0, limit).map((c) => (
+            <View key={c.id} style={s.card}>
+              <Text style={s.heading}>{c.name}</Text>
+              <Text style={s.copy}>
+                {c.group} · {data.units.find((u) => u.id === c.unitId)?.name}
+              </Text>
+              {data.actors
+                .filter(
+                  (a) => a.role === "family" && a.childIds?.includes(c.id),
+                )
+                .map((a) => (
+                  <Text key={a.id} style={s.copy}>
+                    Responsável: {a.name}
                   </Text>
-                )}
-                {can(actor, "routines.read") &&
-                  data.routines
-                    .filter((r) => r.childId === c.id && r.date === DEMO_DATE)
-                    .map((r) => (
-                      <View key={r.id} style={s.routine}>
-                        <Text style={s.name}>
-                          {r.published ? "Rotina publicada" : "Rascunho"}
-                        </Text>
-                        <Text style={s.copy}>
-                          {r.meal} · Sono {r.sleep} min · {r.mood}
-                        </Text>
-                        <Text style={s.copy}>{r.note}</Text>
-                      </View>
-                    ))}
-                {can(actor, "attendance.write") && (
-                  <Pressable
-                    accessibilityRole="button"
-                    style={s.action}
-                    onPress={() => {
-                      setChild(c);
-                      setDate(DEMO_DATE);
-                      const a = data.attendance.find(
-                        (a) => a.childId === c.id && a.date === DEMO_DATE,
-                      );
-                      setStatus(a?.status || "present");
-                      setArrival(a?.arrival || "08:00");
-                      setDeparture(a?.departure || "17:00");
-                    }}
-                  >
-                    <Text style={s.actionText}>Registrar presença →</Text>
-                  </Pressable>
-                )}
-              </View>
-            ))}
+                ))}
+              {can(actor, "attendance.read") && (
+                <Text style={s.copy}>
+                  Presença:{" "}
+                  {(
+                    {
+                      present: "Na escola",
+                      absent: "Ausente",
+                      left: "Saída registrada",
+                    } as Record<string, string>
+                  )[
+                    data.attendance.find(
+                      (a) => a.childId === c.id && a.date === DEMO_DATE,
+                    )?.status || ""
+                  ] || "Não registrada"}
+                </Text>
+              )}
+              {can(actor, "routines.read") &&
+                data.routines
+                  .filter((r) => r.childId === c.id && r.date === DEMO_DATE)
+                  .map((r) => (
+                    <View key={r.id} style={s.routine}>
+                      <Text style={s.name}>
+                        {r.published ? "Rotina publicada" : "Rascunho"}
+                      </Text>
+                      <Text style={s.copy}>
+                        {r.meal} · Sono {r.sleep} min · {r.mood}
+                      </Text>
+                      <Text style={s.copy}>{r.note}</Text>
+                    </View>
+                  ))}
+              {can(actor, "attendance.write") && (
+                <Pressable
+                  accessibilityRole="button"
+                  style={s.action}
+                  onPress={() => {
+                    setChild(c);
+                    setDate(DEMO_DATE);
+                    const a = data.attendance.find(
+                      (a) => a.childId === c.id && a.date === DEMO_DATE,
+                    );
+                    setStatus(a?.status || "present");
+                    setArrival(a?.arrival || "08:00");
+                    setDeparture(a?.departure || "17:00");
+                  }}
+                >
+                  <Text style={s.actionText}>Registrar presença →</Text>
+                </Pressable>
+              )}
+            </View>
+          ))}
+          {more(students.length)}
         </>
       )}
       {view === "finance" && can(actor, "finance.read") && (
@@ -202,30 +224,29 @@ export function StaffWorkspace({
               Valores demonstrativos · Cobranças por família
             </Text>
           </View>
-          {data.actors
-            .filter((a) => a.role === "family")
-            .flatMap((a) =>
-              consolidateInvoices(
-                data.invoices.filter((i) => a.childIds?.includes(i.childId)),
-              ).map((g) => (
-                <View key={a.id + g.id} style={s.card}>
-                  <Text style={s.heading}>{a.name}</Text>
-                  <Text style={s.copy}>
-                    {g.reference} · {g.due.split("-").reverse().join("/")}
+          {families.slice(0, limit).flatMap((a) =>
+            consolidateInvoices(
+              data.invoices.filter((i) => a.childIds?.includes(i.childId)),
+            ).map((g) => (
+              <View key={a.id + g.id} style={s.card}>
+                <Text style={s.heading}>{a.name}</Text>
+                <Text style={s.copy}>
+                  {g.reference} · {g.due.split("-").reverse().join("/")}
+                </Text>
+                <Text style={s.amount}>{money(g.amount)}</Text>
+                <Text style={s.copy}>
+                  {g.status === "paid" ? "Pago" : "Em aberto"}
+                </Text>
+                {g.invoices.map((i) => (
+                  <Text key={i.id} style={s.copy}>
+                    {data.children.find((c) => c.id === i.childId)?.name} ·{" "}
+                    {money(i.amount)}
                   </Text>
-                  <Text style={s.amount}>{money(g.amount)}</Text>
-                  <Text style={s.copy}>
-                    {g.status === "paid" ? "Pago" : "Em aberto"}
-                  </Text>
-                  {g.invoices.map((i) => (
-                    <Text key={i.id} style={s.copy}>
-                      {data.children.find((c) => c.id === i.childId)?.name} ·{" "}
-                      {money(i.amount)}
-                    </Text>
-                  ))}
-                </View>
-              )),
-            )}
+                ))}
+              </View>
+            )),
+          )}
+          {more(families.length)}
           <Text style={s.copy}>
             Nenhum pagamento real é processado nesta demonstração.
           </Text>

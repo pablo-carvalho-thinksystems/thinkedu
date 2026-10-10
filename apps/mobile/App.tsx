@@ -34,6 +34,7 @@ import * as DocumentPicker from "expo-document-picker";
 import { Directory, File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { useVideoPlayer, VideoView } from "expo-video";
+import { AuditHistory } from "./src/AuditHistory";
 import { StaffWorkspace } from "./src/StaffWorkspace";
 import { can, roleLabels } from "../../packages/core/permissions.mjs";
 import { VersionNotice } from "./src/VersionNotice";
@@ -43,6 +44,7 @@ import { Child, useSchool } from "./src/session";
 
 type IconName = React.ComponentProps<typeof Feather>["name"];
 type Page =
+  | "audit"
   | TeacherPage
   | "home"
   | "day"
@@ -254,22 +256,15 @@ function ChildTag({ child }: { child: Child }) {
 }
 function Flower({ color = C.orange }: { color?: string }) {
   return (
-    <View accessibilityElementsHidden style={s.flower}>
-      {[0, 1, 2, 3].map((n) => (
-        <View
-          key={n}
-          style={{
-            width: 18,
-            height: 18,
-            borderRadius: 9,
-            backgroundColor: color,
-            position: "absolute",
-            left: (n % 2) * 19,
-            top: Math.floor(n / 2) * 19,
-          }}
-        />
-      ))}
-    </View>
+    <Image
+      source={
+        color === C.lime
+          ? require("./assets/thinkedu-symbol-light.png")
+          : require("./assets/thinkedu-symbol.png")
+      }
+      accessibilityElementsHidden
+      style={{ width: 40, height: 40, marginTop: 4, resizeMode: "contain" }}
+    />
   );
 }
 function Heading({
@@ -399,9 +394,18 @@ function Row({
   );
 }
 
+import { filterUnitView } from "../../packages/core/units.mjs";
 function SchoolApp() {
   const school = useSchool(),
-    { data, actor, busy, dispatch } = school;
+    { actor, busy, dispatch } = school;
+  const [unitId, setUnitId] = useState("all");
+  const data = filterUnitView(
+    school.data,
+    actor.role === "family" ? "all" : unitId,
+  );
+  useEffect(() => {
+    setUnitId("all");
+  }, [actor.id]);
   const [page, setPage] = useState<Page>("home"),
     [history, setHistory] = useState<Page[]>([]);
   const [childId, setChildId] = useState("all"),
@@ -438,11 +442,20 @@ function SchoolApp() {
     [place, setPlace] = useState("Escola Semente");
   const [dayDate, setDayDate] = useState(DEMO_DATE);
   const [profilePicker, setProfilePicker] = useState(false);
+  const [profileSearch, setProfileSearch] = useState("");
   const [teacherDate, setTeacherDate] = useState(DEMO_DATE),
     [teacherClassId, setTeacherClassId] = useState("jardim"),
     [teacherStudentId, setTeacherStudentId] = useState("lia");
   const { width } = useWindowDimensions(),
     family = actor.role === "family";
+  useEffect(() => {
+    if (
+      !family &&
+      data.classes.length &&
+      !data.classes.some((g) => g.id === teacherClassId)
+    )
+      setTeacherClassId(data.classes[0].id);
+  }, [actor.id, data.classes, teacherClassId]);
   const children = data.children as Child[],
     selected = children.find((c) => c.id === childId),
     scope = selected
@@ -603,13 +616,17 @@ function SchoolApp() {
     setHistory([]);
     setFilter("all");
   }
-  function role(id: string) {
-    setProfilePicker(false);
+  async function role(id: string) {
     if (busy) return;
-    school.switchRole(id);
+    if (!(await school.switchRole(id))) return;
+    setProfilePicker(false);
     setTeacherDate(DEMO_DATE);
     setChildId("all");
-    setPage(id === "rafael" ? "home" : "classroom");
+    setPage(
+      school.profiles.find((a) => a.id === id)?.role === "family"
+        ? "home"
+        : "classroom",
+    );
     setHistory([]);
     setFilter("all");
   }
@@ -690,7 +707,11 @@ function SchoolApp() {
                 : `Turma ${children.find((c) => c.classId === teacherClassId)?.group || "selecionada"}`}
           </Copy>
           <Copy size={10} color={C.muted}>
-            {data.school.name}
+            {selected
+              ? data.units.find((u) => u.id === selected.unitId)?.name
+              : family
+                ? `${data.school.name} · ${data.units.length} unidade(s)`
+                : data.school.name}
           </Copy>
         </View>
         <Icon name="chevron-down" size={17} />
@@ -712,14 +733,30 @@ function SchoolApp() {
         </Pressable>
       ) : (
         <View>
-          <Text style={s.wordmark}>
-            think<Text style={{ color: C.blue }}>Edu</Text>
-            <Text style={{ color: C.orange }}>·</Text>
-          </Text>
+          <View style={[s.row, { gap: 8 }]}>
+            <Text style={s.wordmark}>
+              think<Text style={{ color: C.blue }}>Edu</Text>
+            </Text>
+            <Image
+              source={require("./assets/thinkedu-symbol.png")}
+              style={{ width: 30, height: 30 }}
+              accessibilityElementsHidden
+            />
+          </View>
           <Copy size={9} bold color={C.muted} style={{ letterSpacing: 1.4 }}>
             THINKSYSTEMS · EDUCAÇÃO
           </Copy>
         </View>
+      )}
+      {can(actor, "audit.read") && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Ver histórico de auditoria"
+          style={s.circle}
+          onPress={() => go("audit")}
+        >
+          <Icon name="shield" />
+        </Pressable>
       )}
       {can(actor, "communication.read") && (
         <Pressable
@@ -798,6 +835,7 @@ function SchoolApp() {
       invoice: "finance.read",
       calendar: "calendar.read",
       event: "calendar.write",
+      audit: "audit.read",
       notices: "communication.read",
       notice: "communication.read",
       materials: "communication.read",
@@ -836,6 +874,7 @@ function SchoolApp() {
         />
       );
 
+    if (page === "audit") return <AuditHistory load={school.loadAudit} />;
     switch (page) {
       case "home":
         return (
@@ -2047,8 +2086,8 @@ function SchoolApp() {
               </Copy>
               <Copy color={C.white}>
                 {family
-                  ? "Responsável · Lia e Bento"
-                  : "Educadora · Escola Semente"}
+                  ? `Responsável · ${familyNames}`
+                  : `${roleLabels[actor.role]} · ${data.school.name}`}
               </Copy>
             </Card>
             {family && (
@@ -2723,6 +2762,7 @@ function SchoolApp() {
               <Pressable
                 accessibilityRole="button"
                 onPress={() => {
+                  setProfileSearch("");
                   setProfilePicker(true);
                   void school.refreshProfiles();
                 }}
@@ -2744,6 +2784,29 @@ function SchoolApp() {
                   contentContainerStyle={s.content}
                 >
                   {screenHeader}
+                  {!family && school.data.units.length > 0 && (
+                    <View style={{ marginBottom: 18 }}>
+                      <Chips
+                        items={[
+                          { id: "all", label: "Todas as unidades" },
+                          ...school.data.units.map((u) => ({
+                            id: u.id,
+                            label: u.name,
+                          })),
+                        ]}
+                        value={unitId}
+                        onChange={(id) => {
+                          setUnitId(id);
+                          setChildId("all");
+                          setTeacherClassId(
+                            school.data.classes.find(
+                              (g) => id === "all" || g.unitId === id,
+                            )?.id || "",
+                          );
+                        }}
+                      />
+                    </View>
+                  )}
                   {content()}
                 </ScrollView>
                 <View style={s.dockWrap}>
@@ -2807,16 +2870,29 @@ function SchoolApp() {
               Escolha uma pessoa. No ambiente real, o perfil será identificado
               pelo login.
             </Copy>
+            <TextInput
+              accessibilityLabel="Buscar perfil de demonstração"
+              placeholder="Buscar pessoa ou perfil"
+              style={s.input}
+              value={profileSearch}
+              onChangeText={setProfileSearch}
+            />
             <ScrollView>
-              {school.profiles.map((a) => (
-                <Row
-                  key={a.id}
-                  title={a.name}
-                  sub={roleLabels[a.role]}
-                  icon="user"
-                  onPress={() => role(a.id)}
-                />
-              ))}
+              {school.profiles
+                .filter((a) =>
+                  `${a.name} ${roleLabels[a.role]}`
+                    .toLowerCase()
+                    .includes(profileSearch.toLowerCase()),
+                )
+                .map((a) => (
+                  <Row
+                    key={a.id}
+                    title={a.name}
+                    sub={roleLabels[a.role]}
+                    icon="user"
+                    onPress={() => role(a.id)}
+                  />
+                ))}
             </ScrollView>
             <Button outline onPress={() => setProfilePicker(false)}>
               Cancelar
@@ -2873,7 +2949,9 @@ function SchoolApp() {
                   <View style={{ flex: 1 }}>
                     <Copy bold>{c.name}</Copy>
                     <Copy size={11} color={C.muted}>
-                      {c.group} · {data.school.name}
+                      {c.group} ·{" "}
+                      {data.units.find((u) => u.id === c.unitId)?.name ||
+                        data.school.name}
                     </Copy>
                   </View>
                   {childId === c.id && (

@@ -1,3 +1,5 @@
+import { populateSchoolScenario } from "./scenario.mjs";
+import { makeAuditEntry, stateChanges } from "./audit.mjs";
 import {
   can,
   canonicalRole,
@@ -17,6 +19,25 @@ export function createSeed() {
     version: 1,
     ...seedTeacherDay(),
     school: { id: "semente", name: "Escola Semente" },
+    units: [
+      {
+        id: "central",
+        schoolId: "semente",
+        name: "Unidade Central",
+        address: {
+          street: "Rua das Sementes",
+          number: "120",
+          neighborhood: "Centro",
+          city: "São Paulo",
+          state: "SP",
+          postalCode: "01000-000",
+        },
+      },
+    ],
+    classes: [
+      { id: "jardim", unitId: "central", name: "Jardim II", capacity: 16 },
+      { id: "maternal", unitId: "central", name: "Maternal I", capacity: 16 },
+    ],
     children: [
       {
         id: "lia",
@@ -211,23 +232,76 @@ export function createSeed() {
       },
     ],
     posts: seedPosts(),
+    auditAccessRoles: [],
     audit: [],
   };
 }
 export function accessibleChildren(state, actor) {
   actor = effectiveActor(state, actor);
   if (!can(actor, "students.read")) return [];
-  return state.children.filter((c) =>
-    canonicalRole(actor.role) === "teacher"
-      ? actor.classIds.includes(c.classId)
-      : actor.role === "family"
-        ? actor.childIds.includes(c.id)
-        : true,
+  const classUnits = new Map(
+    (state.classes || []).map((c) => [c.id, c.unitId]),
   );
+  return state.children
+    .filter(
+      (c) =>
+        actor.unitIds === undefined ||
+        actor.unitIds.includes(
+          c.unitId || classUnits.get(c.classId) || "central",
+        ),
+    )
+    .filter((c) =>
+      canonicalRole(actor.role) === "teacher"
+        ? actor.classIds.includes(c.classId)
+        : actor.role === "family"
+          ? actor.childIds.includes(c.id)
+          : true,
+    );
 }
 export function upgradeStore(state) {
+  const units = state.units || [
+    {
+      id: "central",
+      schoolId: state.school.id,
+      name: "Unidade Central",
+      address: {
+        street: "Rua das Sementes",
+        number: "120",
+        neighborhood: "Centro",
+        city: "São Paulo",
+        state: "SP",
+        postalCode: "01000-000",
+      },
+    },
+  ];
+  const classes = state.classes || [
+    ...new Map(
+      state.children.map((c) => [
+        c.classId,
+        {
+          id: c.classId,
+          unitId: c.unitId || units[0].id,
+          name: c.group,
+          capacity: Math.max(
+            16,
+            state.children.filter((a) => a.classId === c.classId).length,
+          ),
+        },
+      ]),
+    ).values(),
+  ];
   return {
     ...state,
+    units,
+    classes,
+    children: state.children.map((c) => ({
+      ...c,
+      unitId:
+        classes.find((g) => g.id === c.classId)?.unitId ||
+        c.unitId ||
+        units[0].id,
+    })),
+    auditAccessRoles: state.auditAccessRoles || [],
     actors: state.actors
       .map((a) => ({ ...a, active: a.active !== false }))
       .concat(
@@ -261,9 +335,31 @@ export function visibleState(state, actor) {
   const children = accessibleChildren(state, actor),
     ids = new Set(children.map((c) => c.id));
   const { audit, actors, ...rest } = state;
+  const allowedUnits = can(actor, "students.read")
+    ? state.units.filter((u) =>
+        actor.role === "family"
+          ? children.some((c) => c.unitId === u.id)
+          : (actor.unitIds === undefined || actor.unitIds.includes(u.id)) &&
+            (actor.role !== "teacher" ||
+              state.classes.some(
+                (g) => g.unitId === u.id && actor.classIds.includes(g.id),
+              )),
+      )
+    : [];
+  const allowedUnitIds = new Set(allowedUnits.map((u) => u.id));
   return {
     ...rest,
     currentActor: actor,
+    units: allowedUnits,
+    classes: state.classes.filter(
+      (g) =>
+        allowedUnitIds.has(g.unitId) &&
+        (actor.role === "teacher"
+          ? actor.classIds.includes(g.id)
+          : actor.role === "family"
+            ? children.some((c) => c.classId === g.id)
+            : true),
+    ),
     children: can(actor, "attendance.read")
       ? children
       : children.map((c) => ({ ...c, arrival: "—" })),
@@ -315,6 +411,18 @@ export function visibleState(state, actor) {
           .filter((a) => a.schoolId === state.school.id)
           .filter(
             (a) =>
+              a.id === actor.id ||
+              (a.role === "family"
+                ? a.childIds.some((id) => ids.has(id))
+                : a.role === "teacher"
+                  ? a.classIds.some((cid) =>
+                      children.some((c) => c.classId === cid),
+                    )
+                  : actor.unitIds === undefined ||
+                    a.unitIds?.some((u) => allowedUnitIds.has(u))),
+          )
+          .filter(
+            (a) =>
               can(actor, "users.manage") ||
               a.id === actor.id ||
               a.role === "teacher" ||
@@ -332,15 +440,17 @@ export function visibleState(state, actor) {
             can(actor, "students.write") ||
             (can(actor, "finance.read") && actor.role !== "family")
               ? {
-                  childIds: a.childIds,
+                  childIds: a.childIds.filter((id) => ids.has(id)),
                   classIds: a.classIds,
+                  unitIds: a.unitIds,
                   active: a.active !== false,
                   financial: a.financial,
                   schoolId: a.schoolId,
+                  auditAccess: a.auditAccess === true,
                 }
               : {}),
           })),
-    audit: can(actor, "audit.read") ? audit : [],
+    audit: can(actor, "audit.read") ? audit.slice(-100) : [],
   };
 }
 function fail(message, status = 400) {
@@ -385,6 +495,10 @@ export function applyCommand(
       fail("Seu perfil não tem permissão para esta ação.", 403);
   };
   const permissions = {
+    "unit.create": "units.manage",
+    "unit.update": "units.manage",
+    "class.create": "units.manage",
+    "demo.populate": "access.manage",
     "student.create": "students.write",
     "attendance.save": "attendance.write",
     "activity.create": "activities.write",
@@ -398,6 +512,7 @@ export function applyCommand(
     "event.create": "calendar.write",
     "user.create": "users.manage",
     "user.update": "users.manage",
+    "audit.access": "audit.manage",
   };
   if (permissions[command?.type]) requirePermission(permissions[command.type]);
   const next = structuredClone(upgradeStore(state)),
@@ -405,7 +520,92 @@ export function applyCommand(
   const timeValid = (value) =>
     typeof value === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
   let auditSubject = null;
-  if (type === "user.create" || type === "user.update") {
+  if (type === "demo.populate") {
+    Object.assign(next, populateSchoolScenario(next));
+    auditSubject = "scenario-320";
+  } else if (type === "unit.create" || type === "unit.update") {
+    if (actor.unitIds !== undefined)
+      fail("Somente a gestão de toda a escola pode administrar unidades.", 403);
+    const target =
+      type === "unit.update"
+        ? next.units.find((u) => u.id === command.unitId)
+        : null;
+    if (type === "unit.update" && !target) fail("Unidade não encontrada.", 404);
+    const a = command.address || {};
+    const address = Object.fromEntries(
+      ["street", "number", "neighborhood", "city", "state", "postalCode"].map(
+        (k) => [k, text(a[k], 150)],
+      ),
+    );
+    if (
+      !/^[A-Z]{2}$/.test(address.state) ||
+      !/^\d{5}-?\d{3}$/.test(address.postalCode)
+    )
+      fail("Revise a UF e o CEP.");
+    const unit = {
+      id: target?.id || id(),
+      schoolId: next.school.id,
+      name: text(command.name, 100),
+      address,
+    };
+    auditSubject = unit.id;
+    if (target)
+      next.units = next.units.map((u) => (u.id === target.id ? unit : u));
+    else next.units.push(unit);
+  } else if (type === "class.create") {
+    const unit = next.units.find((u) => u.id === command.unitId);
+    if (
+      !unit ||
+      (actor.unitIds !== undefined && !actor.unitIds.includes(unit.id))
+    )
+      fail("Unidade sem vínculo autorizado.", 403);
+    if (
+      !Number.isInteger(command.capacity) ||
+      command.capacity < 1 ||
+      command.capacity > 100
+    )
+      fail("Informe uma capacidade entre 1 e 100 alunos.");
+    const group = {
+      id: id(),
+      unitId: unit.id,
+      name: text(command.name, 100),
+      capacity: command.capacity,
+    };
+    if (
+      next.classes.some(
+        (g) =>
+          g.unitId === unit.id &&
+          g.name.toLowerCase() === group.name.toLowerCase(),
+      )
+    )
+      fail("Já existe uma turma com esse nome na unidade.", 409);
+    next.classes.push(group);
+    auditSubject = group.id;
+  } else if (type === "audit.access") {
+    if (typeof command.allowed !== "boolean")
+      fail("Informe se o acesso será liberado.");
+    if (command.role) {
+      const role = canonicalRole(command.role);
+      if (!staffRoles.includes(role) || role === "administrator")
+        fail("Selecione um perfil válido.");
+      next.auditAccessRoles = (next.auditAccessRoles || []).filter(
+        (r) => r !== role,
+      );
+      if (command.allowed) next.auditAccessRoles.push(role);
+      auditSubject = role;
+    } else {
+      const target = next.actors.find(
+        (a) =>
+          a.id === command.userId &&
+          a.schoolId === next.school.id &&
+          staffRoles.includes(canonicalRole(a.role)),
+      );
+      if (!target || canonicalRole(target.role) === "administrator")
+        fail("Selecione um usuário da equipe.");
+      target.auditAccess = command.allowed;
+      auditSubject = target.id;
+    }
+  } else if (type === "user.create" || type === "user.update") {
     const target =
       type === "user.update"
         ? next.actors.find((a) => a.id === command.userId)
@@ -419,18 +619,78 @@ export function applyCommand(
       fail("Usuário da equipe não encontrado.", 404);
     const role = canonicalRole(command.role);
     if (
+      (role === "administrator" ||
+        (target && canonicalRole(target.role) === "administrator")) &&
+      !can(actor, "access.manage")
+    )
+      fail("Somente a Administração pode alterar esse acesso.", 403);
+    if (
       !staffRoles.includes(role) ||
       typeof command.active !== "boolean" ||
       !Array.isArray(command.classIds)
     )
       fail("Revise o perfil e o vínculo com as turmas.");
+    const unitIds =
+      command.unitIds === undefined
+        ? target?.unitIds
+        : command.unitIds === null
+          ? undefined
+          : command.unitIds;
+    if (
+      unitIds !== undefined &&
+      (!Array.isArray(unitIds) ||
+        !unitIds.length ||
+        unitIds.some((u) => !next.units.some((v) => v.id === u)))
+    )
+      fail("Selecione unidades válidas.");
+    if (
+      actor.unitIds !== undefined &&
+      (unitIds === undefined ||
+        unitIds.some((u) => !actor.unitIds.includes(u)) ||
+        (target &&
+          (target.unitIds === undefined ||
+            target.unitIds.some((u) => !actor.unitIds.includes(u)))))
+    )
+      fail("Não é possível conceder acesso fora de suas unidades.", 403);
+    if (role === "administrator" && unitIds !== undefined)
+      fail("A Administração precisa de acesso a todas as unidades.");
     const classIds = [...new Set(command.classIds)];
     if (
-      classIds.some((cid) => !next.children.some((c) => c.classId === cid)) ||
+      classIds.some(
+        (cid) =>
+          !next.classes.some(
+            (c) =>
+              c.id === cid &&
+              (unitIds === undefined || unitIds.includes(c.unitId)),
+          ),
+      ) ||
       (role === "teacher" && !classIds.length)
     )
       fail("Professores precisam de ao menos uma turma válida.");
-    if (target?.id === actor.id && (role !== "director" || !command.active))
+    if (
+      target?.id === actor.id &&
+      canonicalRole(actor.role) === "administrator" &&
+      (role !== "administrator" || !command.active)
+    )
+      fail("Você não pode remover seu próprio acesso de Administração.", 409);
+    if (
+      target &&
+      canonicalRole(target.role) === "administrator" &&
+      target.active !== false &&
+      (role !== "administrator" || !command.active) &&
+      !next.actors.some(
+        (a) =>
+          a.id !== target.id &&
+          canonicalRole(a.role) === "administrator" &&
+          a.active !== false,
+      )
+    )
+      fail("Mantenha ao menos uma Administração ativa.", 409);
+    if (
+      target?.id === actor.id &&
+      canonicalRole(actor.role) === "director" &&
+      (role !== "director" || !command.active)
+    )
       fail("Você não pode remover seu próprio acesso de direção.", 409);
     if (
       target &&
@@ -452,7 +712,9 @@ export function applyCommand(
       schoolId: next.school.id,
       childIds: [],
       classIds: role === "teacher" ? classIds : [],
-      financial: ["director", "finance"].includes(role),
+      ...(unitIds !== undefined ? { unitIds: [...new Set(unitIds)] } : {}),
+      financial: ["administrator", "director", "finance"].includes(role),
+      auditAccess: target?.auditAccess === true,
       active: command.active,
     };
     auditSubject = user.id;
@@ -460,10 +722,19 @@ export function applyCommand(
       next.actors = next.actors.map((a) => (a.id === target.id ? user : a));
     else next.actors.push(user);
   } else if (type === "student.create") {
-    const group = next.children.find(
-      (c) => c.classId === command.classId,
-    )?.group;
-    if (!group) fail("Selecione uma turma cadastrada.");
+    const classroom = next.classes.find((c) => c.id === command.classId);
+    if (!classroom) fail("Selecione uma turma cadastrada.");
+    if (
+      actor.unitIds !== undefined &&
+      !actor.unitIds.includes(classroom.unitId)
+    )
+      fail("Unidade sem vínculo autorizado.", 403);
+    if (
+      next.children.filter((c) => c.classId === classroom.id).length >=
+      classroom.capacity
+    )
+      fail("A turma atingiu sua capacidade de alunos.", 409);
+    const group = classroom.name;
     const name = text(command.name, 100);
     let guardian;
     if (command.guardianId) {
@@ -474,6 +745,11 @@ export function applyCommand(
           a.schoolId === next.school.id,
       );
       if (!guardian) fail("Responsável não encontrado.");
+      if (
+        actor.unitIds !== undefined &&
+        !guardian.childIds.some((childId) => ids.has(childId))
+      )
+        fail("Responsável sem vínculo com suas unidades.", 403);
     } else {
       guardian = {
         id: id(),
@@ -491,6 +767,7 @@ export function applyCommand(
       id: childId,
       name,
       classId: command.classId,
+      unitId: classroom.unitId,
       group,
       initials: name
         .split(/\s+/)
@@ -698,19 +975,33 @@ export function applyCommand(
       tone: "sky",
     });
   } else fail("Ação não disponível.");
-  next.audit.push({
-    id: id(),
-    actorId: actor.id,
-    type,
-    at: now,
-    subject:
-      auditSubject ||
-      command.userId ||
-      command.childId ||
-      command.noticeId ||
-      command.activityId ||
-      null,
-  });
+  const changes = stateChanges(upgradeStore(state), next);
+  const primary = {
+    student: "children",
+    user: "actors",
+    mural: "posts",
+    notice: "notices",
+    event: "events",
+    message: "messages",
+  }[type.split(".")[0]];
+  const subject =
+    auditSubject ||
+    command.userId ||
+    command.childId ||
+    command.noticeId ||
+    command.activityId ||
+    changes.find((c) => c.collection === primary)?.id ||
+    null;
+  next.audit.push(
+    makeAuditEntry(next, actor, {
+      id: id(),
+      type,
+      at: now,
+      subject,
+      changes,
+      context: { source: "local" },
+    }),
+  );
   return next;
 }
 export function calendarCells(year, month) {

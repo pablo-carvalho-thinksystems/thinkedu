@@ -18,11 +18,14 @@ import {
   roleLabels,
   staffRoles,
   rolePermissions,
+  effectiveActor,
 } from "../../../packages/core/permissions.mjs";
 import { consolidateInvoices } from "../../../packages/core/billing.mjs";
 import lia from "../../mobile/assets/lia-avatar.png";
 import bento from "../../mobile/assets/bento-avatar.png";
 import "./style.css";
+import { AuditWorkspace } from "./AuditWorkspace";
+import { filterUnitView } from "../../../packages/core/units.mjs";
 const seed = createSeed(),
   key = "thinkedu.admin.v1";
 const api = import.meta.env.VITE_API_URL?.replace(/\/$/, "");
@@ -35,6 +38,8 @@ const pages = [
   "Financeiro",
   "Configurações",
   "Usuários e acessos",
+  "Unidades",
+  "Auditoria",
 ];
 const pagePermissions = [
   "routines.read",
@@ -45,6 +50,8 @@ const pagePermissions = [
   "finance.read",
   "users.manage",
   "users.manage",
+  "units.manage",
+  "audit.read",
 ];
 function Icon({ name, size = 20 }: { name: string; size?: number }) {
   const paths: Record<string, string> = {
@@ -97,6 +104,41 @@ const dateLabel = (d: string) =>
     day: "numeric",
     month: "long",
   });
+function Pagination({
+  total,
+  page,
+  setPage,
+  size = 16,
+}: {
+  total: number;
+  page: number;
+  setPage: (page: number) => void;
+  size?: number;
+}) {
+  const count = Math.max(1, Math.ceil(total / size));
+  if (count < 2) return null;
+  return (
+    <div className="pagination">
+      <span>
+        {total} registros · Página {page + 1} de {count}
+      </span>
+      <button
+        className="secondary"
+        disabled={!page}
+        onClick={() => setPage(page - 1)}
+      >
+        Anterior
+      </button>
+      <button
+        className="secondary"
+        disabled={page + 1 >= count}
+        onClick={() => setPage(page + 1)}
+      >
+        Próxima
+      </button>
+    </div>
+  );
+}
 function App() {
   const [actorId, setActorId] = useState("direcao"),
     [sessionActor, setSessionActor] = useState<Actor>(
@@ -134,7 +176,10 @@ function App() {
   });
   const actor = api
     ? (data as VisibleStore).currentActor || sessionActor
-    : (data as Store).actors.find((a) => a.id === actorId) || sessionActor;
+    : effectiveActor(
+        data as Store,
+        (data as Store).actors.find((a) => a.id === actorId) || sessionActor,
+      );
   const allowedPages = pages.filter((_, i) => can(actor, pagePermissions[i]));
   useEffect(() => {
     if (!allowedPages.includes(pageRef.current))
@@ -143,11 +188,13 @@ function App() {
           ? "Financeiro"
           : allowedPages[0] || pages[0],
       );
-  }, [actorId, actor.role, actor.active]);
+  }, [actorId, actor.role, actor.active, actor.auditAccess]);
   const pageRef = useRef(pages[0]);
   const [page, setPage] = useState(pages[0]),
     [search, setSearch] = useState(""),
     [classId, setClass] = useState("all"),
+    [unitId, setUnit] = useState("all"),
+    [listPage, setListPage] = useState(0),
     [date, setDate] = useState(DEMO_DATE),
     [error, setError] = useState(""),
     [toast, setToast] = useState(""),
@@ -172,19 +219,27 @@ function App() {
       try {
         const r = await fetch(api + "/demo/session", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-ThinkEdu-Client": "web",
+          },
           body: JSON.stringify({ actorId }),
         });
         if (!r.ok) throw Error("Não foi possível iniciar a sessão.");
         const session = await r.json();
-        const ps = await fetch(api + "/demo/profiles");
+        const ps = await fetch(api + "/demo/profiles", {
+          headers: { "X-ThinkEdu-Client": "web" },
+        });
         if (active && ps.ok)
           setProfiles(
             (await ps.json()).filter((a: Actor) => a.role !== "family"),
           );
         if (active) setSessionActor(session.actor);
         const s = await fetch(api + "/state", {
-          headers: { Authorization: "Bearer " + session.token },
+          headers: {
+            Authorization: "Bearer " + session.token,
+            "X-ThinkEdu-Client": "web",
+          },
         });
         if (!s.ok) throw Error("Não foi possível carregar a escola.");
         const next = await s.json();
@@ -206,7 +261,10 @@ function App() {
     let active = true;
     const refresh = () => {
       void fetch(api + "/state", {
-        headers: { Authorization: "Bearer " + token },
+        headers: {
+          Authorization: "Bearer " + token,
+          "X-ThinkEdu-Client": "web",
+        },
       })
         .then(async (r) => {
           if (!active) return;
@@ -253,18 +311,46 @@ function App() {
     if (modal) dialog.current?.showModal();
     else dialog.current?.close();
   }, [modal]);
-  const shown: VisibleStore = api
+  const authorized: VisibleStore = api
     ? (data as VisibleStore)
     : visibleState(data as Store, actor);
+  const shown = filterUnitView(authorized, unitId);
+  useEffect(() => {
+    setListPage(0);
+  }, [unitId, classId, search, page, channel, actorId]);
+  useEffect(() => {
+    if (unitId !== "all" && !authorized.units.some((u) => u.id === unitId))
+      setUnit("all");
+  }, [actorId, authorized.units]);
   const currentProfiles = api
     ? profiles
     : (data as Store).actors.filter(
         (a) => a.role !== "family" && a.active !== false,
       );
-  function switchProfile(id: string) {
+  async function switchProfile(id: string) {
     if (busy) return;
     const next = currentProfiles.find((a) => a.id === id);
     if (!next) return;
+    if (api && token) {
+      try {
+        const ended = await fetch(api + "/session/logout", {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer " + token,
+            "X-ThinkEdu-Client": "web",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({}),
+        });
+        if (!ended.ok && ended.status !== 401)
+          throw Error("Sessão não encerrada.");
+      } catch {
+        setError("Não foi possível encerrar a sessão. Tente novamente.");
+        return;
+      }
+    }
+    setUnit("all");
+    setClass("all");
     setActorId(id);
     setSessionActor(next as Actor);
     setModal("");
@@ -295,9 +381,13 @@ function App() {
       setData({ ...blank, currentActor: next as Actor });
     }
   }
-  const classes = [
-    ...new Map(shown.children.map((c) => [c.classId, c.group])).entries(),
-  ];
+  const classes: [string, string][] = shown.classes.map((g) => [
+    g.id,
+    `${g.name} · ${shown.units.find((u) => u.id === g.unitId)?.name || ""}`,
+  ]);
+  const slicePage = <T,>(items: T[], size = 16) =>
+    items.slice(listPage * size, (listPage + 1) * size);
+  const families = shown.actors.filter((a) => a.role === "family");
   const children = shown.children.filter(
     (c) =>
       (classId === "all" || c.classId === classId) &&
@@ -323,6 +413,7 @@ function App() {
     .filter((i) => i.status === "paid")
     .reduce((s, i) => s + i.amount, 0);
   const go = (p: string) => {
+    window.scrollTo({ top: 0 });
     setPage(p);
     setSearch("");
     setClass("all");
@@ -338,6 +429,9 @@ function App() {
       kind: "update",
       role: c ? "teacher" : "coordinator",
       active: "true",
+      units: actor.unitIds?.join(",") || "all",
+      capacity: "16",
+      unitId: unitId === "all" ? shown.units[0]?.id || "" : unitId,
       status: "present",
       arrival: "08:00",
       departure: "17:00",
@@ -367,6 +461,7 @@ function App() {
           headers: {
             "Content-Type": "application/json",
             Authorization: "Bearer " + token,
+            "X-ThinkEdu-Client": "web",
           },
           body: JSON.stringify(command),
         });
@@ -412,6 +507,31 @@ function App() {
         role: form.role,
         active: form.active === "true",
         classIds: (form.classes || "").split(",").filter(Boolean),
+        unitIds:
+          form.units === "all"
+            ? null
+            : (form.units || "").split(",").filter(Boolean),
+      });
+    if (modal === "unit")
+      void dispatch({
+        type: form.unitIdToEdit ? "unit.update" : "unit.create",
+        unitId: form.unitIdToEdit,
+        name: form.name,
+        address: {
+          street: form.street,
+          number: form.number,
+          neighborhood: form.neighborhood,
+          city: form.city,
+          state: form.state,
+          postalCode: form.postalCode,
+        },
+      });
+    if (modal === "class")
+      void dispatch({
+        type: "class.create",
+        name: form.name,
+        unitId: form.unitId,
+        capacity: Number(form.capacity),
       });
     if (modal === "enroll")
       void dispatch({
@@ -518,7 +638,11 @@ function App() {
     <label>
       Destinatários
       <select value={targets} onChange={(e) => setTargets(e.target.value)}>
-        <option value="all">Toda a escola</option>
+        <option value="all">
+          {unitId === "all"
+            ? "Todos os alunos autorizados"
+            : "Toda a unidade selecionada"}
+        </option>
         {classes.map(([id, name]) => (
           <option key={id} value={id}>
             {name}
@@ -582,7 +706,7 @@ function App() {
       <aside className="sidebar">
         <button className="brand" onClick={() => go(pages[0])}>
           think<span>Edu</span>
-          <i>✳</i>
+          <img className="brandSymbol" src="/thinkedu-symbol.svg" alt="" />
         </button>
         <small className="brandSub">THINKSYSTEMS · EDUCAÇÃO</small>
         <div className="school">
@@ -613,6 +737,7 @@ function App() {
                         "money",
                         "settings",
                         "people",
+                        "home",
                       ][i]
                     }
                   />
@@ -624,7 +749,7 @@ function App() {
         </nav>
         <div className="sidebarBottom">
           <div className="sidebarNote">
-            <span>✳</span>
+            <img className="decorSymbol" src="/thinkedu-symbol.svg" alt="" />
             <strong>
               Cuidar começa
               <br />
@@ -653,6 +778,25 @@ function App() {
           <span>
             Gestão escolar <b>/</b> {page}
           </span>
+          <label className="unitFilter">
+            Unidade
+            <select
+              aria-label="Filtrar unidade"
+              value={unitId}
+              onChange={(e) => {
+                setUnit(e.target.value);
+                setClass("all");
+                setSearch("");
+              }}
+            >
+              <option value="all">Todas as unidades autorizadas</option>
+              {authorized.units.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="demoProfile">
             Perfil de demonstração
             <select
@@ -663,7 +807,9 @@ function App() {
             >
               {currentProfiles.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.name.split(" · ")[0]} · {roleLabels[a.role]}
+                  {a.name.includes(roleLabels[a.role])
+                    ? a.name
+                    : `${a.name} · ${roleLabels[a.role]}`}
                 </option>
               ))}
             </select>
@@ -693,51 +839,70 @@ function App() {
                     "Mais clareza para a escola. Mais facilidade para as famílias.",
                     "As informações e a evolução do thinkEdu.",
                     "As pessoas certas, com o acesso certo.",
+                    "Uma escola, vários endereços. Cada unidade com seu espaço.",
+                    "Quem fez, quando e o que mudou. Tudo em um histórico.",
                   ][pages.indexOf(page)]
                 }
               </p>
             </div>
-            {can(
-              actor,
-              page === pages[7]
-                ? "users.manage"
-                : page === pages[1]
-                  ? "students.write"
-                  : page === pages[4]
-                    ? "calendar.write"
-                    : page === pages[3] && channel === "Mural"
-                      ? "mural.write"
-                      : "communication.write",
-            ) && (
-              <button
-                className="primary"
-                onClick={() =>
-                  openModal(
-                    page === pages[7]
-                      ? "user"
+            {page !== pages[9] &&
+              can(
+                actor,
+                page === pages[8]
+                  ? "units.manage"
+                  : page === pages[7]
+                    ? "users.manage"
+                    : page === pages[1]
+                      ? "students.write"
+                      : page === pages[4]
+                        ? "calendar.write"
+                        : page === pages[3] && channel === "Mural"
+                          ? "mural.write"
+                          : "communication.write",
+              ) && (
+                <button
+                  className="primary"
+                  onClick={() =>
+                    openModal(
+                      page === pages[8]
+                        ? "unit"
+                        : page === pages[7]
+                          ? "user"
+                          : page === pages[1]
+                            ? "enroll"
+                            : page === "Calendário"
+                              ? "event"
+                              : page === "Comunicação" && channel === "Mural"
+                                ? "post"
+                                : "notice",
+                    )
+                  }
+                >
+                  <Icon name="plus" />
+                  {page === pages[8]
+                    ? "Nova unidade"
+                    : page === pages[7]
+                      ? "Novo usuário"
                       : page === pages[1]
-                        ? "enroll"
+                        ? "Novo aluno"
                         : page === "Calendário"
-                          ? "event"
+                          ? "Novo evento"
                           : page === "Comunicação" && channel === "Mural"
-                            ? "post"
-                            : "notice",
-                  )
-                }
-              >
-                <Icon name="plus" />
-                {page === pages[7]
-                  ? "Novo usuário"
-                  : page === pages[1]
-                    ? "Novo aluno"
-                    : page === "Calendário"
-                      ? "Novo evento"
-                      : page === "Comunicação" && channel === "Mural"
-                        ? "Nova publicação"
-                        : "Novo comunicado"}
-              </button>
-            )}
+                            ? "Nova publicação"
+                            : "Novo comunicado"}
+                </button>
+              )}
           </header>
+          {page === pages[9] && can(actor, "audit.read") && (
+            <AuditWorkspace
+              data={authorized}
+              actor={actor}
+              api={api}
+              token={token}
+              onCommand={dispatch}
+            />
+          )}
+
           {api && !connected ? (
             <p className="empty">Carregando seu acesso à escola…</p>
           ) : null}
@@ -841,9 +1006,14 @@ function App() {
                           <th />
                         </tr>
                       </thead>
-                      <tbody>{children.map(row)}</tbody>
+                      <tbody>{slicePage(children).map(row)}</tbody>
                     </table>
                   </div>
+                  <Pagination
+                    total={children.length}
+                    page={listPage}
+                    setPage={setListPage}
+                  />
                   {!children.length && (
                     <p className="empty">Nenhum aluno nesta seleção.</p>
                   )}
@@ -853,7 +1023,11 @@ function App() {
                   </div>
                 </section>
                 <section className="connectionCard">
-                  <div className="bigFlower">✳</div>
+                  <img
+                    className="bigFlower decorSymbol"
+                    src="/thinkedu-symbol.svg"
+                    alt=""
+                  />
                   <span className="eyebrow">ESCOLA + FAMÍLIA</span>
                   <h2>
                     Presença que
@@ -913,7 +1087,7 @@ function App() {
                       {pending.length} pendências
                     </span>
                   </div>
-                  {pending.map((c) => (
+                  {pending.slice(0, 6).map((c) => (
                     <button
                       className="pendingRow"
                       key={c.id}
@@ -947,7 +1121,11 @@ function App() {
                         key={id}
                         onClick={() => setClass(id)}
                       >
-                        <span className="classMotif">✳</span>
+                        <img
+                          className="classMotif decorSymbol"
+                          src="/thinkedu-symbol.svg"
+                          alt=""
+                        />
                         <small>TURMA</small>
                         <h2>{name}</h2>
                         <p>
@@ -997,9 +1175,14 @@ function App() {
                           <th />
                         </tr>
                       </thead>
-                      <tbody>{children.map(row)}</tbody>
+                      <tbody>{slicePage(children).map(row)}</tbody>
                     </table>
                   </div>
+                  <Pagination
+                    total={children.length}
+                    page={listPage}
+                    setPage={setListPage}
+                  />
                   {!children.length && (
                     <p className="empty">Nenhum aluno encontrado.</p>
                   )}
@@ -1032,7 +1215,7 @@ function App() {
               </div>
               {channel === "Comunicados" && (
                 <div className="feed">
-                  {shown.notices.map((n) => (
+                  {slicePage(shown.notices).map((n) => (
                     <article className="panel" key={n.id}>
                       <div className="sectionTitle">
                         <span className="badge">
@@ -1067,7 +1250,7 @@ function App() {
               )}
               {channel === "Mural" && (
                 <div className="feed">
-                  {shown.posts.map((p) => (
+                  {slicePage(shown.posts).map((p) => (
                     <article className="panel" key={p.id}>
                       <div className="sectionTitle">
                         <span className="badge">
@@ -1116,7 +1299,15 @@ function App() {
               {channel === "Conversas" && (
                 <section className="panel">
                   <h2>Conversas com responsáveis</h2>
-                  {shown.children.map((c) => {
+                  {slicePage(
+                    shown.children.filter(
+                      (c) =>
+                        !search ||
+                        `${c.name} ${c.group}`
+                          .toLowerCase()
+                          .includes(search.toLowerCase()),
+                    ),
+                  ).map((c) => {
                     const m = shown.messages
                       .filter((m) => m.childId === c.id)
                       .at(-1);
@@ -1142,6 +1333,25 @@ function App() {
                 </section>
               )}
             </>
+          )}
+          {page === pages[3] && (
+            <Pagination
+              total={
+                channel === "Mural"
+                  ? shown.posts.length
+                  : channel === "Comunicados"
+                    ? shown.notices.length
+                    : shown.children.filter(
+                        (c) =>
+                          !search ||
+                          `${c.name} ${c.group}`
+                            .toLowerCase()
+                            .includes(search.toLowerCase()),
+                      ).length
+              }
+              page={listPage}
+              setPage={setListPage}
+            />
           )}
           {page === pages[4] && can(actor, pagePermissions[4]) && (
             <>
@@ -1309,64 +1519,58 @@ function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {shown.actors
-                        .filter((a) => a.role === "family")
-                        .flatMap((a) =>
-                          consolidateInvoices(
-                            shown.invoices.filter((i) =>
-                              a.childIds?.includes(i.childId),
-                            ),
-                          ).map((g) => (
-                            <tr key={a.id + g.id}>
-                              <td>
-                                <strong>{a.name}</strong>
-                                <small>
-                                  {[
-                                    ...new Set(
-                                      g.invoices.map((i) => i.childId),
-                                    ),
-                                  ]
-                                    .map(
-                                      (id) =>
-                                        shown.children.find((c) => c.id === id)
-                                          ?.name,
-                                    )
-                                    .join(" + ")}
-                                </small>
-                              </td>
-                              <td>
-                                {g.reference}
-                                <details>
-                                  <summary>Ver composição</summary>
-                                  {g.invoices.map((i) => (
-                                    <p key={i.id}>
-                                      {
-                                        shown.children.find(
-                                          (c) => c.id === i.childId,
-                                        )?.name
-                                      }{" "}
-                                      · {money(i.amount)}
-                                    </p>
-                                  ))}
-                                </details>
-                              </td>
-                              <td>{g.due.split("-").reverse().join("/")}</td>
-                              <td>
-                                <strong>{money(g.amount)}</strong>
-                              </td>
-                              <td>
-                                <span
-                                  className={
-                                    "badge " +
-                                    (g.status === "paid" ? "green" : "orange")
-                                  }
-                                >
-                                  {g.status === "paid" ? "Pago" : "Em aberto"}
-                                </span>
-                              </td>
-                            </tr>
-                          )),
-                        )}
+                      {slicePage(families).flatMap((a) =>
+                        consolidateInvoices(
+                          shown.invoices.filter((i) =>
+                            a.childIds?.includes(i.childId),
+                          ),
+                        ).map((g) => (
+                          <tr key={a.id + g.id}>
+                            <td>
+                              <strong>{a.name}</strong>
+                              <small>
+                                {[...new Set(g.invoices.map((i) => i.childId))]
+                                  .map(
+                                    (id) =>
+                                      shown.children.find((c) => c.id === id)
+                                        ?.name,
+                                  )
+                                  .join(" + ")}
+                              </small>
+                            </td>
+                            <td>
+                              {g.reference}
+                              <details>
+                                <summary>Ver composição</summary>
+                                {g.invoices.map((i) => (
+                                  <p key={i.id}>
+                                    {
+                                      shown.children.find(
+                                        (c) => c.id === i.childId,
+                                      )?.name
+                                    }{" "}
+                                    · {money(i.amount)}
+                                  </p>
+                                ))}
+                              </details>
+                            </td>
+                            <td>{g.due.split("-").reverse().join("/")}</td>
+                            <td>
+                              <strong>{money(g.amount)}</strong>
+                            </td>
+                            <td>
+                              <span
+                                className={
+                                  "badge " +
+                                  (g.status === "paid" ? "green" : "orange")
+                                }
+                              >
+                                {g.status === "paid" ? "Pago" : "Em aberto"}
+                              </span>
+                            </td>
+                          </tr>
+                        )),
+                      )}
                       {shown.invoices
                         .filter(
                           (i) =>
@@ -1400,10 +1604,120 @@ function App() {
                     </tbody>
                   </table>
                 </div>
+                <Pagination
+                  total={families.length}
+                  page={listPage}
+                  setPage={setListPage}
+                />
                 <p className="subtle">
                   Integração de Pix, boleto e conciliação bancária será
                   necessária para cobranças reais.
                 </p>
+              </section>
+            </>
+          )}
+          {page === pages[8] && can(actor, "units.manage") && (
+            <>
+              <div className="metrics">
+                <article>
+                  <small>Unidades</small>
+                  <strong>{shown.units.length}</strong>
+                  <p>Endereços independentes</p>
+                </article>
+                <article>
+                  <small>Turmas</small>
+                  <strong>{shown.classes.length}</strong>
+                  <p>Vinculadas à sua unidade</p>
+                </article>
+                <article>
+                  <small>Alunos matriculados</small>
+                  <strong>{shown.children.length}</strong>
+                  <p>Visão da seleção atual</p>
+                </article>
+              </div>
+              <div className="unitGrid">
+                {shown.units.map((u) => (
+                  <section className="panel unitCard" key={u.id}>
+                    <span className="eyebrow">UNIDADE ESCOLAR</span>
+                    <h2>{u.name}</h2>
+                    <p className="bodyCopy">
+                      {u.address.street}, {u.address.number}
+                      <br />
+                      {u.address.neighborhood} · {u.address.city}/
+                      {u.address.state}
+                      <br />
+                      CEP {u.address.postalCode}
+                    </p>
+                    <div className="settingRow">
+                      <span>Turmas / alunos</span>
+                      <strong>
+                        {shown.classes.filter((g) => g.unitId === u.id).length}{" "}
+                        /{" "}
+                        {shown.children.filter((c) => c.unitId === u.id).length}
+                      </strong>
+                    </div>
+                    <div className="actions">
+                      <button
+                        className="secondary"
+                        onClick={() => {
+                          openModal("unit");
+                          setForm({
+                            name: u.name,
+                            unitIdToEdit: u.id,
+                            ...u.address,
+                          });
+                        }}
+                      >
+                        Editar unidade
+                      </button>
+                      <button
+                        className="primary"
+                        onClick={() => {
+                          openModal("class");
+                          setForm({ name: "", unitId: u.id, capacity: "16" });
+                        }}
+                      >
+                        Nova turma
+                      </button>
+                    </div>
+                  </section>
+                ))}
+              </div>
+              <section className="panel">
+                <h2>Turmas e capacidade</h2>
+                <div className="tableWrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Turma</th>
+                        <th>Unidade</th>
+                        <th>Alunos</th>
+                        <th>Vagas</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shown.classes.map((g) => {
+                        const enrolled = shown.children.filter(
+                          (c) => c.classId === g.id,
+                        ).length;
+                        return (
+                          <tr key={g.id}>
+                            <td>
+                              <strong>{g.name}</strong>
+                            </td>
+                            <td>
+                              {shown.units.find((u) => u.id === g.unitId)?.name}
+                            </td>
+                            <td>
+                              {enrolled} / {g.capacity}
+                            </td>
+                            <td>{Math.max(0, g.capacity - enrolled)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </section>
             </>
           )}
@@ -1451,36 +1765,38 @@ function App() {
                   <strong>Aguardando publicação</strong>
                 </div>
               </section>
-              <section className="panel">
-                <h2>Últimas alterações</h2>
-                {[...shown.audit]
-                  .reverse()
-                  .slice(0, 6)
-                  .map((a) => (
-                    <div className="settingRow" key={a.id}>
-                      <span>
-                        {(
-                          {
-                            "user.create": "Usuário cadastrado",
-                            "user.update": "Acesso atualizado",
-                            "student.create": "Aluno cadastrado",
-                            "notice.create": "Comunicado publicado",
-                            "mural.create": "Publicação no mural",
-                            "event.create": "Evento criado",
-                            "attendance.save": "Chamada atualizada",
-                            "message.send": "Mensagem enviada",
-                          } as Record<string, string>
-                        )[a.type] || a.type}
-                      </span>
-                      <small>{dateLabel(a.at.slice(0, 10))}</small>
-                    </div>
-                  ))}
-                {!shown.audit.length && (
-                  <p className="subtle">
-                    As ações realizadas serão registradas aqui.
-                  </p>
-                )}
-              </section>
+              {can(actor, "audit.read") && (
+                <section className="panel">
+                  <h2>Últimas alterações</h2>
+                  {[...shown.audit]
+                    .reverse()
+                    .slice(0, 6)
+                    .map((a) => (
+                      <div className="settingRow" key={a.id}>
+                        <span>
+                          {(
+                            {
+                              "user.create": "Usuário cadastrado",
+                              "user.update": "Acesso atualizado",
+                              "student.create": "Aluno cadastrado",
+                              "notice.create": "Comunicado publicado",
+                              "mural.create": "Publicação no mural",
+                              "event.create": "Evento criado",
+                              "attendance.save": "Chamada atualizada",
+                              "message.send": "Mensagem enviada",
+                            } as Record<string, string>
+                          )[a.type] || a.type}
+                        </span>
+                        <small>{dateLabel(a.at.slice(0, 10))}</small>
+                      </div>
+                    ))}
+                  {!shown.audit.length && (
+                    <p className="subtle">
+                      As ações realizadas serão registradas aqui.
+                    </p>
+                  )}
+                </section>
+              )}
             </div>
           )}
           {page === pages[7] && can(actor, "users.manage") && (
@@ -1520,7 +1836,16 @@ function App() {
                                         classes.find(([id]) => id === cid)?.[1],
                                     )
                                     .join(", ")
-                                : "Toda a escola"}
+                                : a.unitIds
+                                  ? a.unitIds
+                                      .map(
+                                        (id) =>
+                                          authorized.units.find(
+                                            (u) => u.id === id,
+                                          )?.name,
+                                      )
+                                      .join(", ")
+                                  : "Todas as unidades"}
                             </td>
                             <td>
                               <span
@@ -1534,6 +1859,10 @@ function App() {
                             </td>
                             <td>
                               <button
+                                disabled={
+                                  a.role === "administrator" &&
+                                  !can(actor, "access.manage")
+                                }
                                 onClick={() => {
                                   openModal("user");
                                   setForm({
@@ -1543,6 +1872,7 @@ function App() {
                                       a.role === "admin" ? "director" : a.role,
                                     active: String(a.active !== false),
                                     classes: (a.classIds || []).join(","),
+                                    units: a.unitIds?.join(",") || "all",
                                   });
                                 }}
                               >
@@ -1562,9 +1892,15 @@ function App() {
                     <thead>
                       <tr>
                         <th>Área</th>
-                        {staffRoles.map((r) => (
-                          <th key={r}>{roleLabels[r]}</th>
-                        ))}
+                        {staffRoles
+                          .filter(
+                            (r) =>
+                              r !== "administrator" ||
+                              can(actor, "access.manage"),
+                          )
+                          .map((r) => (
+                            <th key={r}>{roleLabels[r]}</th>
+                          ))}
                       </tr>
                     </thead>
                     <tbody>
@@ -1599,7 +1935,7 @@ function App() {
           )}
           <footer>
             <span>thinkEdu de ThinkSystems</span>
-            <span>Mais tempo para educar. ✳</span>
+            <span>Mais tempo para educar.</span>
           </footer>
         </main>
       </div>
@@ -1635,6 +1971,10 @@ function App() {
           {
             (
               {
+                unit: form.unitIdToEdit
+                  ? "Editar unidade"
+                  : "Uma nova unidade.",
+                class: "Uma nova turma.",
                 user: form.userId
                   ? "Editar acesso"
                   : "Uma nova pessoa na equipe.",
@@ -1739,6 +2079,39 @@ function App() {
                 </div>
               </>
             )}
+            {modal === "unit" && (
+              <>
+                {field("name", "Nome da unidade")}
+                {field("street", "Logradouro")}
+                {field("number", "Número")}
+                {field("neighborhood", "Bairro")}
+                {field("city", "Cidade")}
+                {field("state", "UF")}
+                {field("postalCode", "CEP")}
+              </>
+            )}
+            {modal === "class" && (
+              <>
+                {field("name", "Nome da turma")}
+                <label>
+                  Unidade
+                  <select
+                    aria-label="Unidade da turma"
+                    value={form.unitId || ""}
+                    onChange={(e) =>
+                      setForm({ ...form, unitId: e.target.value })
+                    }
+                  >
+                    {authorized.units.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {field("capacity", "Capacidade de alunos", "number")}
+              </>
+            )}
             {modal === "user" && (
               <>
                 {field("name", "Nome da pessoa")}
@@ -1746,7 +2119,15 @@ function App() {
                   Perfil de acesso
                   <select
                     value={form.role || "coordinator"}
-                    onChange={(e) => setForm({ ...form, role: e.target.value })}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        role: e.target.value,
+                        ...(e.target.value === "administrator"
+                          ? { units: "all", classes: "" }
+                          : {}),
+                      })
+                    }
                   >
                     {staffRoles.map((r) => (
                       <option key={r} value={r}>
@@ -1755,30 +2136,87 @@ function App() {
                     ))}
                   </select>
                 </label>
-                {form.role === "teacher" && (
+                {form.role !== "administrator" && (
                   <fieldset>
-                    <legend>Turmas autorizadas</legend>
-                    {classes.map(([id, n]) => (
-                      <label className="classCheck" key={id}>
+                    <legend>Unidades autorizadas</legend>
+                    <label className="classCheck">
+                      <input
+                        type="checkbox"
+                        checked={form.units === "all"}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            units: e.target.checked ? "all" : "",
+                            classes: "",
+                          })
+                        }
+                      />
+                      Todas as unidades da escola
+                    </label>
+                    {authorized.units.map((u) => (
+                      <label className="classCheck" key={u.id}>
                         <input
                           type="checkbox"
-                          checked={(form.classes || "").split(",").includes(id)}
+                          checked={
+                            form.units === "all" ||
+                            (form.units || "").split(",").includes(u.id)
+                          }
+                          disabled={form.units === "all"}
                           onChange={(e) => {
-                            const ids = (form.classes || "")
+                            const ids = (form.units || "")
                               .split(",")
                               .filter(Boolean);
                             setForm({
                               ...form,
-                              classes: (e.target.checked
-                                ? [...ids, id]
-                                : ids.filter((cid) => cid !== id)
+                              units: (e.target.checked
+                                ? [...ids, u.id]
+                                : ids.filter((id) => id !== u.id)
                               ).join(","),
+                              classes: "",
                             });
                           }}
                         />
-                        {n}
+                        {u.name}
                       </label>
                     ))}
+                  </fieldset>
+                )}
+                {form.role === "teacher" && (
+                  <fieldset>
+                    <legend>Turmas autorizadas</legend>
+                    {authorized.classes
+                      .filter(
+                        (g) =>
+                          form.units === "all" ||
+                          (form.units || "").split(",").includes(g.unitId),
+                      )
+                      .map((g) => [
+                        g.id,
+                        `${g.name} · ${authorized.units.find((u) => u.id === g.unitId)?.name}`,
+                      ])
+                      .map(([id, n]) => (
+                        <label className="classCheck" key={id}>
+                          <input
+                            type="checkbox"
+                            checked={(form.classes || "")
+                              .split(",")
+                              .includes(id)}
+                            onChange={(e) => {
+                              const ids = (form.classes || "")
+                                .split(",")
+                                .filter(Boolean);
+                              setForm({
+                                ...form,
+                                classes: (e.target.checked
+                                  ? [...ids, id]
+                                  : ids.filter((cid) => cid !== id)
+                                ).join(","),
+                              });
+                            }}
+                          />
+                          {n}
+                        </label>
+                      ))}
                   </fieldset>
                 )}
                 <label>
@@ -1959,13 +2397,15 @@ function App() {
                     ? "Enviar mensagem"
                     : modal === "attendance"
                       ? "Salvar presença"
-                      : modal === "user"
-                        ? "Salvar acesso"
-                        : modal === "enroll"
-                          ? "Cadastrar aluno"
-                          : modal === "event"
-                            ? "Criar evento"
-                            : "Publicar"}
+                      : ["unit", "class"].includes(modal)
+                        ? "Salvar cadastro"
+                        : modal === "user"
+                          ? "Salvar acesso"
+                          : modal === "enroll"
+                            ? "Cadastrar aluno"
+                            : modal === "event"
+                              ? "Criar evento"
+                              : "Publicar"}
               </button>
             </div>
           </form>

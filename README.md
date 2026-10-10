@@ -104,7 +104,7 @@ CI executa esses comandos em Node 22. Os testes verificam isolamento, permissõe
 
 ## Próximo marco: piloto seguro
 
-Esta entrega é uma base demonstrativa funcional. Antes de operar uma escola real, implementar autenticação com convites verificados, vínculos e permissões administráveis, banco relacional/migrações, armazenamento privado de fotos, consentimentos e retenção, notificações, monitoramento e backups. Integração financeira exige provedor, webhooks idempotentes e conciliação. Captura/upload de fotos, registros em lote, busca avançada e exportações ainda não estão implementados.
+Esta entrega é uma base demonstrativa funcional. Antes de operar uma escola real, implementar autenticação com convites verificados, convites e identidade de produção, banco relacional/migrações, armazenamento privado de fotos, consentimentos e retenção, notificações, monitoramento e backups. Integração financeira exige provedor, webhooks idempotentes e conciliação. Captura/upload de fotos, registros em lote, busca avançada ainda não estão implementados. Exportações de auditoria estão disponíveis no portal conectado.
 
 Confira [arquitetura e próximos marcos](docs/architecture.md) e [limites de segurança](docs/security.md).
 
@@ -115,3 +115,7 @@ Confira [arquitetura e próximos marcos](docs/architecture.md) e [limites de seg
 ## Usuários e permissões
 
 Diretoria, Coordenação, Professores, Financeiro e Secretaria compartilham as regras do domínio e da API. A diretoria gerencia contas em **Usuários e acessos**; professores ficam restritos às suas turmas. [Matriz de permissões e autenticação demonstrativa](docs/perfis-acesso.md).
+
+## Unidades, volume e auditoria
+
+[Cadastro de unidades e cenário com 320 alunos](docs/unidades-e-volume.md). [Rastreabilidade e concessão de auditoria pela Administração](docs/auditoria.md). Com a API demonstrativa iniciada, `npm run demo:populate` reproduz o cenário de 20 turmas de 16 alunos.

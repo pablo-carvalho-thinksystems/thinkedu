@@ -17,8 +17,10 @@
     },
     "web": {
       "bundler": "metro",
-      "name": "thinkEdu · ThinkSystems"
+      "name": "thinkEdu · ThinkSystems",
+      "favicon": "./assets/thinkedu-icon.png"
     },
-    "plugins": ["expo-sharing", "expo-video"]
+    "plugins": ["expo-sharing", "expo-video"],
+    "icon": "./assets/thinkedu-icon.png"
   }
 }

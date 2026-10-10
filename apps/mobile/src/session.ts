@@ -8,6 +8,9 @@ import {
   applyCommand,
   type VisibleStore,
 } from "../../../packages/core/model.mjs";
+import { effectiveActor } from "../../../packages/core/permissions.mjs";
+import { filterAudit } from "../../../packages/core/audit.mjs";
+import { can } from "../../../packages/core/permissions.mjs";
 export type Store = ReturnType<typeof createSeed>;
 export type Actor = Store["actors"][number];
 export type Child = Store["children"][number];
@@ -45,18 +48,28 @@ export function useSchool() {
     locking = useRef(false);
   const actor = base
     ? remote?.currentActor || sessionActor
-    : store.actors.find((a) => a.id === actorId) || sessionActor;
+    : effectiveActor(
+        store,
+        store.actors.find((a) => a.id === actorId) || sessionActor,
+      );
   async function request(path: string, method = "GET", body?: unknown) {
     const response = await fetch(base + path, {
       method,
       headers: {
         "Content-Type": "application/json",
+        "X-ThinkEdu-Client": "app",
         ...(token.current ? { Authorization: "Bearer " + token.current } : {}),
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
     const data = await response.json();
-    if (!response.ok) throw Error(data.error || "Não foi possível concluir.");
+    if (!response.ok) {
+      const e = Error(data.error || "Não foi possível concluir.") as Error & {
+        status: number;
+      };
+      e.status = response.status;
+      throw e;
+    }
     return data;
   }
   useEffect(() => {
@@ -158,12 +171,23 @@ export function useSchool() {
       setError((e as Error).message);
     }
   }
-  function switchRole(id: string) {
-    if (id === actorId || locking.current) return;
+  async function switchRole(id: string) {
+    if (id === actorId) return true;
+    if (locking.current) return false;
     const next = (base ? profiles : store.actors).find(
       (a) => a.id === id && a.active !== false,
     );
-    if (!next) return;
+    if (!next) return false;
+    if (base && token.current) {
+      try {
+        await request("/session/logout", "POST", {});
+      } catch (e) {
+        if ((e as Error & { status?: number }).status !== 401) {
+          setError((e as Error).message);
+          return false;
+        }
+      }
+    }
     setSessionActor({
       ...next,
       childIds: next.childIds || [],
@@ -173,8 +197,24 @@ export function useSchool() {
     });
     setReady(false);
     setActorId(id);
+    return true;
+  }
+  async function loadAudit(filters: Record<string, string>, page = 1) {
+    if (!can(actor, "audit.read"))
+      throw Error("Seu perfil não tem acesso à auditoria.");
+    if (base)
+      return request(
+        "/audit?" +
+          new URLSearchParams({ ...filters, page: String(page), limit: "25" }),
+      );
+    const list = filterAudit(store.audit, filters);
+    return {
+      entries: list.slice((page - 1) * 25, page * 25),
+      total: list.length,
+    };
   }
   return {
+    loadAudit,
     data: base
       ? remote || emptyState(sessionActor)
       : visibleState(store, actor),

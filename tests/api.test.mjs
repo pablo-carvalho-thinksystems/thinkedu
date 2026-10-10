@@ -177,7 +177,12 @@ test("API: sessão, isolamento, comandos e persistência entre perfis", async ()
     assert.deepEqual(wall.posts[0].childIds, ["bento"]);
     const saved = JSON.parse(await readFile(join(dir, "demo.json"), "utf8"));
     assert.equal(saved.messages.at(-1).body, "Mensagem de teste da educadora");
-    assert.equal(saved.audit.at(-1).type, "mural.create");
+    assert.equal(
+      saved.audit
+        .filter((e) => e.type === "mural.create" && e.outcome === "succeeded")
+        .at(-1).type,
+      "mural.create",
+    );
     assert.equal(saved.posts[0].title, "Mural de teste");
   } finally {
     child.kill();

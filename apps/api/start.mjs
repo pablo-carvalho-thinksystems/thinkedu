@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { readFile, mkdir, writeFile, rename } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import {
@@ -9,9 +9,15 @@ import {
   visibleState,
   applyCommand,
 } from "../../packages/core/model.mjs";
-
+import { can, effectiveActor } from "../../packages/core/permissions.mjs";
+import {
+  makeAuditEntry,
+  filterAudit,
+  csvAudit,
+  auditLabels,
+} from "../../packages/core/audit.mjs";
 import { releasePolicy } from "../../packages/core/release.mjs";
-
+import { sealAudit, verifyAudit } from "./audit-store.mjs";
 const demo = process.env.THINKEDU_DEMO === "true";
 const path =
   process.env.THINKEDU_DATA_FILE ||
@@ -19,68 +25,157 @@ const path =
 let state = createSeed();
 try {
   state = upgradeStore(JSON.parse(await readFile(path, "utf8")));
-} catch (error) {
-  if (error.code !== "ENOENT") throw error;
+} catch (e) {
+  if (e.code !== "ENOENT") throw e;
+}
+const keyPath = process.env.THINKEDU_AUDIT_KEY_FILE || path + ".audit.key";
+await mkdir(dirname(keyPath), { recursive: true });
+let auditKey,
+  freshKey = false;
+try {
+  auditKey = await readFile(keyPath);
+} catch (e) {
+  if (e.code !== "ENOENT") throw e;
+  if (state.auditIntegrity)
+    throw Error(
+      "A chave original da auditoria está ausente. Restaure-a antes de iniciar a API.",
+    );
+  auditKey = randomBytes(32);
+  await writeFile(keyPath, auditKey, { flag: "wx", mode: 0o600 });
+  freshKey = true;
+}
+if (!freshKey && !verifyAudit(state, auditKey))
+  throw Error(
+    "O histórico de auditoria foi alterado ou está sem seu selo. Restaure os dados e a chave originais.",
+  );
+if (freshKey) {
+  state.audit = state.audit.map((e) => ({
+    ...e,
+    actorName: e.actorName || "Nome não registrado",
+    actorRole: e.actorRole || "legacy",
+    source: e.source || "legacy",
+    legacy: !e.changes,
+    changes: e.changes || [],
+  }));
+  sealAudit(state, auditKey);
 }
 const sessions = new Map();
 let queue = Promise.resolve();
-const persist = async (next) => {
-  await mkdir(dirname(path), {
-    recursive: true,
-  });
-  await writeFile(`${path}.tmp`, JSON.stringify(next), "utf8");
-  await rename(`${path}.tmp`, path);
+async function persist(next) {
+  sealAudit(next, auditKey);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path + ".tmp", JSON.stringify(next), "utf8");
+  await rename(path + ".tmp", path);
   state = next;
-};
+}
+await persist(state);
+function serial(fn) {
+  const task = queue.then(fn);
+  queue = task.catch(() => {});
+  return task;
+}
+function record(
+  next,
+  actor,
+  type,
+  context,
+  { outcome = "succeeded", error = null, metadata = {}, subject = null } = {},
+) {
+  next.audit.push(
+    makeAuditEntry(next, actor, {
+      id: randomUUID(),
+      type,
+      context,
+      outcome,
+      error,
+      metadata,
+      subject,
+    }),
+  );
+  return next;
+}
+async function log(actor, type, context, options) {
+  return serial(async () =>
+    persist(record(structuredClone(state), actor, type, context, options)),
+  );
+}
 const origins = (
   process.env.ALLOWED_ORIGIN || "http://localhost:4341,http://127.0.0.1:4342"
 ).split(",");
 const server = createServer(async (req, res) => {
   const origin = req.headers.origin;
-  if (origin && !origins.includes(origin)) {
-    res.writeHead(403);
-    return res.end();
-  }
+  const url = new URL(req.url, "http://localhost");
+  const route = url.pathname;
+  const context = {
+    requestId: randomUUID(),
+    source: ["web", "app"].includes(req.headers["x-thinkedu-client"])
+      ? req.headers["x-thinkedu-client"]
+      : "api",
+    method: req.method,
+    path: [
+      "/health",
+      "/app/version",
+      "/demo/session",
+      "/demo/profiles",
+      "/state",
+      "/commands",
+      "/audit",
+      "/session/logout",
+    ].includes(route)
+      ? route
+      : "/unknown",
+  };
+  const token = req.headers.authorization?.replace(/^Bearer /, "");
+  const session = sessions.get(token);
+  let actor = session
+    ? state.actors.find((a) => a.id === session.actorId)
+    : null;
   const headers = {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
-    ...(origin
+    "X-Request-Id": context.requestId,
+    ...(origin && origins.includes(origin)
       ? { "Access-Control-Allow-Origin": origin, Vary: "Origin" }
       : {}),
   };
-  const send = (status, body) => {
-    res.writeHead(status, headers);
-    res.end(JSON.stringify(body));
+  const send = (status, body, extra = {}) => {
+    res.writeHead(status, { ...headers, ...extra });
+    res.end(typeof body === "string" ? body : JSON.stringify(body));
   };
-  if (req.method === "OPTIONS") {
-    res.writeHead(204, {
-      ...headers,
-      "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-      "Access-Control-Allow-Headers": "Authorization,Content-Type",
-    });
-    return res.end();
-  }
+  let logged = false,
+    action = "request.rejected";
   try {
-    const route = new URL(req.url, "http://localhost").pathname;
+    if (origin && !origins.includes(origin)) {
+      await log(actor, "request.rejected", context, {
+        outcome: "denied",
+        error: "Origem não autorizada.",
+      });
+      logged = true;
+      return send(403, { error: "Origem não autorizada." });
+    }
+    if (req.method === "OPTIONS") {
+      res.writeHead(204, {
+        ...headers,
+        "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+        "Access-Control-Allow-Headers":
+          "Authorization,Content-Type,X-ThinkEdu-Client",
+      });
+      return res.end();
+    }
     if (route === "/health")
       return send(200, { name: "thinkEdu", status: "ok", demo });
     if (route === "/app/version" && req.method === "GET") {
-      const platform = new URL(req.url, "http://localhost").searchParams.get(
-        "platform",
-      );
+      const platform = url.searchParams.get("platform");
       if (!["ios", "android"].includes(platform))
         return send(400, { error: "Plataforma inválida." });
       let config = {};
-      if (process.env.THINKEDU_RELEASE_FILE) {
+      if (process.env.THINKEDU_RELEASE_FILE)
         try {
           config = JSON.parse(
             await readFile(process.env.THINKEDU_RELEASE_FILE, "utf8"),
           );
-        } catch {
-          /* Configuração ausente mantém avisos desativados. */
-        }
-      }
+        } catch {}
       return send(200, releasePolicy(config[platform], platform));
     }
     if (!demo)
@@ -94,57 +189,285 @@ const server = createServer(async (req, res) => {
       for await (const chunk of req) {
         input += chunk;
         if (Buffer.byteLength(input) > 32000) {
-          send(413, { error: "Solicitação muito grande." });
-          req.destroy();
-          return;
+          const e = Error("Solicitação muito grande.");
+          e.status = 413;
+          throw e;
         }
       }
       try {
-        body = JSON.parse(input);
+        body = input || route !== "/session/logout" ? JSON.parse(input) : {};
+        if (!body || typeof body !== "object" || Array.isArray(body))
+          throw Error("JSON inválido.");
       } catch {
-        return send(400, { error: "JSON inválido." });
+        const e = Error("JSON inválido.");
+        e.status = 400;
+        throw e;
       }
+      if (body?.type && auditLabels[body.type]) action = body.type;
     }
-    if (route === "/demo/profiles" && req.method === "GET")
+    if (route === "/demo/profiles" && req.method === "GET") {
+      action = "profiles.read";
+      await log(actor, action, context);
+      logged = true;
       return send(
         200,
         state.actors
-          .filter((a) => a.active !== false)
+          .filter((a) => a.active !== false && a.schoolId === state.school.id)
           .map((a) => ({ id: a.id, name: a.name, role: a.role })),
       );
+    }
     if (route === "/demo/session" && req.method === "POST") {
-      const actor = state.actors.find((a) => a.id === body.actorId);
-      if (!actor || actor.active === false)
-        return send(403, { error: "Perfil inválido ou desativado." });
-      const token = randomUUID();
-      sessions.set(token, { actorId: actor.id, expires: Date.now() + 3600000 });
-      return send(200, { token, actor });
-    }
-    const token = req.headers.authorization?.replace(/^Bearer /, "");
-    const session = sessions.get(token);
-    if (!session || session.expires < Date.now())
-      return send(401, { error: "Sessão inválida ou expirada." });
-    const actor = state.actors.find((a) => a.id === session.actorId);
-    if (!actor || actor.active === false)
-      return send(401, { error: "Acesso desativado. Entre novamente." });
-    if (route === "/state" && req.method === "GET")
-      return send(200, visibleState(state, actor));
-    if (route === "/commands" && req.method === "POST") {
-      const task = queue.then(async () => {
-        const next = applyCommand(state, actor, body);
-        await persist(next);
-        return visibleState(
-          state,
-          state.actors.find((a) => a.id === actor.id),
-        );
+      action = "session.login";
+      actor = state.actors.find(
+        (a) => a.id === body.actorId && a.schoolId === state.school.id,
+      );
+      if (!actor || actor.active === false) {
+        const e = Error("Perfil inválido ou desativado.");
+        e.status = 403;
+        throw e;
+      }
+      await log(actor, action, context);
+      logged = true;
+      const newToken = randomUUID();
+      sessions.set(newToken, {
+        actorId: actor.id,
+        expires: Date.now() + 3600000,
       });
-      queue = task.catch(() => {});
-      return send(200, await task);
+      return send(200, { token: newToken, actor });
     }
-    return send(404, { error: "Rota não encontrada." });
-  } catch (error) {
-    send(error.status || 500, {
-      error: error.status ? error.message : "Falha ao processar solicitação.",
+    if (
+      !session ||
+      session.expires < Date.now() ||
+      !actor ||
+      actor.active === false
+    ) {
+      action = "session.rejected";
+      const e = Error("Sessão inválida, expirada ou acesso desativado.");
+      e.status = 401;
+      throw e;
+    }
+    if (route === "/session/logout" && req.method === "POST") {
+      action = "session.logout";
+      await log(actor, action, context);
+      logged = true;
+      sessions.delete(token);
+      return send(200, { ok: true });
+    }
+    if (route === "/state" && req.method === "GET") {
+      action = "state.read";
+      const data = await serial(async () => {
+        const current = state.actors.find((a) => a.id === session.actorId);
+        if (!current || current.active === false) {
+          const e = Error("Acesso desativado.");
+          e.status = 401;
+          throw e;
+        }
+        const view = visibleState(state, current);
+        const access = Object.fromEntries(
+          [
+            "units",
+            "classes",
+            "children",
+            "attendance",
+            "routines",
+            "activities",
+            "notices",
+            "posts",
+            "messages",
+            "events",
+            "invoices",
+          ]
+            .filter((k) => view[k].length)
+            .map((k) => [k, view[k].map((r) => r.id)]),
+        );
+        await persist(
+          record(structuredClone(state), current, action, context, {
+            metadata: { access },
+          }),
+        );
+        return visibleState(state, current);
+      });
+      logged = true;
+      return send(200, data);
+    }
+    if (route === "/audit" && req.method === "GET") {
+      const format = url.searchParams.get("format");
+      action = format ? "audit.export" : "audit.read";
+      const result = await serial(async () => {
+        const current = state.actors.find((a) => a.id === session.actorId);
+        if (!can(effectiveActor(state, current), "audit.read")) {
+          const e = Error(
+            "Seu perfil não tem acesso ao histórico de auditoria.",
+          );
+          e.status = 403;
+          throw e;
+        }
+        const filters = Object.fromEntries(
+          ["from", "to", "actorId", "type", "outcome", "source", "search"]
+            .filter((k) => url.searchParams.get(k))
+            .map((k) => [
+              k,
+              url.searchParams.get(k).slice(0, k === "search" ? 200 : 100),
+            ]),
+        );
+        for (const k of ["from", "to"])
+          if (
+            filters[k] &&
+            (!/^\d{4}-\d{2}-\d{2}$/.test(filters[k]) ||
+              Number.isNaN(Date.parse(filters[k])) ||
+              new Date(filters[k]).toISOString().slice(0, 10) !== filters[k])
+          ) {
+            const e = Error("Data de filtro inválida.");
+            e.status = 400;
+            throw e;
+          }
+        if (filters.from && filters.to && filters.from > filters.to) {
+          const e = Error("O início deve ser anterior ao fim.");
+          e.status = 400;
+          throw e;
+        }
+        if (format && !["csv", "json"].includes(format)) {
+          const e = Error("Formato inválido.");
+          e.status = 400;
+          throw e;
+        }
+        const page = Number(url.searchParams.get("page") || 1),
+          limit = Number(url.searchParams.get("limit") || 25);
+        if (
+          !Number.isSafeInteger(page) ||
+          page < 1 ||
+          !Number.isSafeInteger(limit) ||
+          limit < 1 ||
+          limit > 100
+        ) {
+          const e = Error("Paginação inválida.");
+          e.status = 400;
+          throw e;
+        }
+        const entries = filterAudit(state.audit, filters);
+        const selected = format
+          ? entries
+          : entries.slice((page - 1) * limit, page * limit);
+        const payload = {
+          entries: selected,
+          total: entries.length,
+          page,
+          limit,
+          filters,
+          timeZone: "America/Sao_Paulo",
+          integrity: {
+            verified: verifyAudit(state, auditKey),
+            count: state.audit.length,
+            head: state.auditIntegrity.head,
+          },
+          actorOptions: [
+            ...new Map(
+              state.audit
+                .filter((e) => e.actorId)
+                .map((e) => [
+                  e.actorId,
+                  { id: e.actorId, name: e.actorName || e.actorId },
+                ]),
+            ).values(),
+          ],
+          typeOptions: [...new Set(state.audit.map((e) => e.type))],
+        };
+        await persist(
+          record(structuredClone(state), current, action, context, {
+            metadata: {
+              filters,
+              format: format || null,
+              returned: selected.length,
+              page,
+            },
+          }),
+        );
+        return payload;
+      });
+      logged = true;
+      if (format === "csv")
+        return send(200, csvAudit(result.entries), {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition":
+            'attachment; filename="thinkedu-auditoria.csv"',
+        });
+      if (format === "json")
+        return send(200, JSON.stringify(result, null, 2), {
+          "Content-Disposition":
+            'attachment; filename="thinkedu-auditoria.json"',
+        });
+      return send(200, result);
+    }
+    if (route === "/commands" && req.method === "POST") {
+      const result = await serial(async () => {
+        try {
+          const current = state.actors.find((a) => a.id === session.actorId);
+          const next = applyCommand(state, current, body);
+          const entry = next.audit.at(-1);
+          Object.assign(entry, {
+            source: context.source,
+            requestId: context.requestId,
+            method: context.method,
+            path: context.path,
+          });
+          await persist(next);
+          return visibleState(
+            state,
+            state.actors.find((a) => a.id === current.id),
+          );
+        } catch (e) {
+          await persist(
+            record(
+              structuredClone(state),
+              state.actors.find((a) => a.id === session.actorId),
+              action,
+              context,
+              {
+                outcome: [401, 403].includes(e.status) ? "denied" : "failed",
+                error: e.status ? e.message : "Falha interna.",
+                subject:
+                  typeof (
+                    body.userId ||
+                    body.childId ||
+                    body.noticeId ||
+                    body.activityId
+                  ) === "string"
+                    ? (
+                        body.userId ||
+                        body.childId ||
+                        body.noticeId ||
+                        body.activityId
+                      ).slice(0, 100)
+                    : null,
+              },
+            ),
+          );
+          logged = true;
+          throw e;
+        }
+      });
+      logged = true;
+      return send(200, result);
+    }
+    const e = Error("Rota não encontrada.");
+    e.status = 404;
+    throw e;
+  } catch (e) {
+    if (!logged)
+      try {
+        await log(actor, action, context, {
+          outcome: [401, 403].includes(e.status) ? "denied" : "failed",
+          error: e.status ? e.message : "Falha interna.",
+        });
+      } catch {
+        return send(503, {
+          error:
+            "Não foi possível registrar a auditoria. A operação não será concluída.",
+        });
+      }
+    return send(e.status || 500, {
+      error: e.status ? e.message : "Falha ao processar solicitação.",
+      requestId: context.requestId,
     });
   }
 });

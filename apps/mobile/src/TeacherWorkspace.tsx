@@ -274,7 +274,7 @@ export function TeacherWorkspace(p: Props) {
           <Pressable
             key={id}
             accessibilityRole="button"
-            accessibilityLabel={`Turma ${items[0].group}`}
+            accessibilityLabel={`Turma ${items[0].group} · ${p.data.units.find((u) => u.id === items[0].unitId)?.name}`}
             accessibilityState={{ selected: id === classId }}
             onPress={() => p.onClass(id)}
             style={[
@@ -283,7 +283,9 @@ export function TeacherWorkspace(p: Props) {
             ]}
           >
             <Label bold size={12} color={id === classId ? C.white : C.ink}>
-              {items[0].group} · {items.length}
+              {items[0].group} ·{" "}
+              {p.data.units.find((u) => u.id === items[0].unitId)?.name} ·{" "}
+              {items.length}
             </Label>
           </Pressable>
         );

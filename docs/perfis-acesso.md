@@ -11,7 +11,11 @@ As regras estão em `packages/core/permissions.mjs` e são compartilhadas pela w
 | Comunicados, mural e calendário | Sim | Sim | Turmas vinculadas | Não | Sim |
 | Conversas individuais | Sim | Sim | Turmas vinculadas | Não | Não |
 | Cobranças por família | Sim | Não | Não | Sim | Não |
-| Gestão de usuários e auditoria | Sim | Não | Não | Não | Não |
+| Gestão de usuários | Sim | Não | Não | Não | Não |
+| Consulta da auditoria | Se liberado | Se liberado | Se liberado | Se liberado | Se liberado |
+| Administração de unidades | Sim | Não | Não | Não | Não |
+
+O novo perfil **Administração** tem acesso às áreas, administra os acessos de Administração e pode liberar a auditoria. As permissões da tabela também respeitam as unidades autorizadas; professores acumulam a restrição de turma. Consulte [unidades e cenário de volume](unidades-e-volume.md) e [auditoria](auditoria.md).
 
 Financeiro é consulta de cobranças nesta versão; não processa pagamentos. Famílias mantêm acesso apenas aos filhos vinculados, rotinas publicadas, materiais e agenda dos próprios filhos; acesso financeiro depende de seu vínculo financeiro. Professores sempre precisam de ao menos uma turma válida.
 
@@ -19,7 +23,7 @@ Financeiro é consulta de cobranças nesta versão; não processa pagamentos. Fa
 
 No portal, entre como Diretoria e abra **Usuários e acessos**. É possível criar pessoas, mudar o papel, selecionar turmas dos professores e ativar/desativar o acesso. A matriz de permissões aparece nessa mesma tela. Não é permitido remover seu próprio acesso de diretoria nem deixar a escola sem uma diretoria ativa. As mudanças são auditadas.
 
-O papel antigo `admin` continua funcionando como Diretoria. A migração acrescenta os perfis demonstrativos Camila (Coordenação), Bruno (Financeiro) e Sofia (Secretaria) sem apagar os dados ou reativar usuários desativados.
+O papel antigo `admin` continua funcionando como Diretoria. A migração acrescenta Administração e os perfis demonstrativos Camila (Coordenação), Bruno (Financeiro) e Sofia (Secretaria) sem apagar os dados ou reativar usuários desativados.
 
 ## Mesma conta no portal e no aplicativo
 

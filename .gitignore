@@ -9,3 +9,5 @@ apps/api/data/*.json
 # Projetos nativos gerados pelo Expo Prebuild (CNG).
 /apps/mobile/ios/
 /apps/mobile/android/
+
+apps/api/data/*.key

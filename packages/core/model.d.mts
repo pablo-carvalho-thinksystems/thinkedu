@@ -1,4 +1,24 @@
+export interface SchoolUnit {
+  id: string;
+  schoolId: string;
+  name: string;
+  address: {
+    street: string;
+    number: string;
+    neighborhood: string;
+    city: string;
+    state: string;
+    postalCode: string;
+  };
+}
+export interface Classroom {
+  id: string;
+  unitId: string;
+  name: string;
+  capacity: number;
+}
 export interface Child {
+  unitId?: string;
   id: string;
   name: string;
   classId: string;
@@ -16,6 +36,8 @@ export interface Actor {
   classIds: string[];
   financial: boolean;
   active?: boolean;
+  auditAccess?: boolean;
+  unitIds?: string[];
 }
 export interface Attendance {
   id: string;
@@ -92,8 +114,28 @@ export interface SchoolEvent {
   tone: string;
 }
 export interface AuditEntry {
+  actorName?: string;
+  actorRole?: string;
+  schoolId?: string;
+  outcome?: string;
+  source?: string;
+  requestId?: string | null;
+  method?: string | null;
+  path?: string | null;
+  error?: string | null;
+  metadata?: Record<string, unknown>;
+  legacy?: boolean;
+  hash?: string;
+  previousHash?: string;
+  changes?: {
+    collection: string;
+    id: string;
+    operation: string;
+    before: unknown;
+    after: unknown;
+  }[];
   id: string;
-  actorId: string;
+  actorId: string | null;
   type: string;
   at: string;
   subject: string | null;
@@ -129,6 +171,8 @@ export function upgradeStore<
 export interface Store {
   version: number;
   school: { id: string; name: string };
+  units: SchoolUnit[];
+  classes: Classroom[];
   children: Child[];
   actors: Actor[];
   routines: Routine[];
@@ -139,6 +183,7 @@ export interface Store {
   invoices: Invoice[];
   events: SchoolEvent[];
   posts: MuralPost[];
+  auditAccessRoles: string[];
   audit: AuditEntry[];
 }
 export interface VisibleStore extends Omit<Store, "actors"> {
@@ -152,6 +197,8 @@ export interface VisibleStore extends Omit<Store, "actors"> {
     active?: boolean;
     financial?: boolean;
     schoolId?: string;
+    auditAccess?: boolean;
+    unitIds?: string[];
   }[];
 }
 export const DEMO_DATE: string;
