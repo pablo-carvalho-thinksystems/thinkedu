@@ -47,6 +47,8 @@ interface Props {
   onChat: (child: Child) => void;
   onCompose: (child?: Child) => void;
   onMural: () => void;
+  onClassUpdate: () => void;
+  onClassMessage: () => void;
   onMaterials: () => void;
   onCalendar: () => void;
 }
@@ -489,6 +491,27 @@ export function TeacherWorkspace(p: Props) {
               p.onMural,
             )}
           </View>
+          <Panel tone={C.lime}>
+            <Label bold size={20}>
+              Conte para toda a turma
+            </Label>
+            <Label size={12}>
+              O dia, as descobertas e os retornos gerais chegam a todos os
+              responsáveis da turma selecionada.
+            </Label>
+            <Action
+              title="Publicar atualização na timeline"
+              onPress={p.onClassUpdate}
+            />
+            <Action
+              title="Enviar comunicado para a turma"
+              onPress={() => p.onCompose()}
+            />
+            <Action
+              title="Enviar mensagem para todos"
+              onPress={p.onClassMessage}
+            />
+          </Panel>
           <View style={{ marginTop: 22, marginBottom: 12 }}>
             <Label bold size={20}>
               O que pede atenção

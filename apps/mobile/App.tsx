@@ -427,6 +427,8 @@ function SchoolApp() {
     [kind, setKind] = useState("update"),
     [recipients, setRecipients] = useState<string[]>([]),
     [due, setDue] = useState("2026-10-13");
+  const [composeChannel, setComposeChannel] = useState("notice");
+  const [showRecipients, setShowRecipients] = useState(false);
   const [review, setReview] = useState(false),
     [dialog, setDialog] = useState<{ title: string; body: string } | null>(
       null,
@@ -523,14 +525,20 @@ function SchoolApp() {
     if (Platform.OS === "web" && typeof document !== "undefined")
       document.title = "thinkEdu · ThinkSystems";
   }, []);
-  function newPost() {
+  function newPost(wholeClass = false) {
+    setShowRecipients(false);
     setTitle("");
     setBody("");
     setWallKind("text");
     setWallUrl("");
     setWallFile(null);
     setWallReview(false);
-    setRecipients(scope.map((c) => c.id));
+    setRecipients(
+      (wholeClass
+        ? children.filter((c) => c.classId === teacherClassId)
+        : scope
+      ).map((c) => c.id),
+    );
     go("muralCompose");
   }
   async function pickMaterial() {
@@ -671,13 +679,26 @@ function SchoolApp() {
     setBody("");
     setChildId(child.id);
     setRecipients([child.id]);
+    setComposeChannel("notice");
+    setShowRecipients(true);
     go("compose");
   }
-  function openCompose(type = "update") {
+  function openCompose(
+    type = "update",
+    channel = "notice",
+    wholeClass = false,
+  ) {
+    setComposeChannel(channel);
+    setShowRecipients(false);
     setKind(type);
     setTitle("");
     setBody("");
-    setRecipients(scope.map((c) => c.id));
+    setRecipients(
+      (wholeClass
+        ? children.filter((c) => c.classId === teacherClassId)
+        : scope
+      ).map((c) => c.id),
+    );
     setDue("2026-10-13");
     go("compose");
   }
@@ -901,6 +922,34 @@ function SchoolApp() {
               icon="book-open"
               onPress={() => go("mural")}
             />
+            {family && posts.length > 0 && (
+              <View style={{ marginBottom: 18 }}>
+                <Copy bold size={19}>
+                  Na timeline da turma
+                </Copy>
+                {[...posts]
+                  .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+                  .slice(0, 3)
+                  .map((p) => (
+                    <Row
+                      key={p.id}
+                      title={p.title}
+                      sub={`${data.actors.find((a) => a.id === p.authorId)?.name || "Equipe escolar"} · ${dateLabel(p.createdAt.slice(0, 10))} · ${p.body.slice(0, 90)}`}
+                      icon={
+                        p.kind === "video"
+                          ? "play"
+                          : p.kind === "file"
+                            ? "paperclip"
+                            : "book-open"
+                      }
+                      onPress={() => {
+                        setPostId(p.id);
+                        go("muralPost");
+                      }}
+                    />
+                  ))}
+              </View>
+            )}
             {scope.map((c) => (
               <Pressable
                 accessibilityRole="button"
@@ -1563,7 +1612,7 @@ function SchoolApp() {
             </Card>
             {selector}
             {!family && (
-              <Button icon="plus" onPress={newPost}>
+              <Button icon="plus" onPress={() => newPost()}>
                 Publicar no mural
               </Button>
             )}
@@ -1798,32 +1847,47 @@ function SchoolApp() {
                     />
                   );
                 })}
+                <Copy size={12} color={C.blue}>
+                  {recipients.length} alunos selecionados · publicação na
+                  timeline dos responsáveis
+                </Copy>
+                <Button
+                  outline
+                  onPress={() => setShowRecipients(!showRecipients)}
+                >
+                  {showRecipients
+                    ? "Ocultar seleção individual"
+                    : "Ajustar alunos individualmente"}
+                </Button>
                 <View style={{ gap: 8, marginBottom: 18 }}>
-                  {children.map((c) => (
-                    <Pressable
-                      key={c.id}
-                      accessibilityRole="checkbox"
-                      accessibilityState={{
-                        checked: recipients.includes(c.id),
-                      }}
-                      onPress={() =>
-                        setRecipients((r) =>
-                          r.includes(c.id)
-                            ? r.filter((id) => id !== c.id)
-                            : [...r, c.id],
-                        )
-                      }
-                      style={[s.row, s.recipient]}
-                    >
-                      <Icon
-                        name={
-                          recipients.includes(c.id) ? "check-square" : "square"
+                  {showRecipients &&
+                    children.map((c) => (
+                      <Pressable
+                        key={c.id}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{
+                          checked: recipients.includes(c.id),
+                        }}
+                        onPress={() =>
+                          setRecipients((r) =>
+                            r.includes(c.id)
+                              ? r.filter((id) => id !== c.id)
+                              : [...r, c.id],
+                          )
                         }
-                        color={C.blue}
-                      />
-                      <ChildTag child={c} />
-                    </Pressable>
-                  ))}
+                        style={[s.row, s.recipient]}
+                      >
+                        <Icon
+                          name={
+                            recipients.includes(c.id)
+                              ? "check-square"
+                              : "square"
+                          }
+                          color={C.blue}
+                        />
+                        <ChildTag child={c} />
+                      </Pressable>
+                    ))}
                 </View>
                 <Chips
                   items={[
@@ -2156,7 +2220,11 @@ function SchoolApp() {
               setChatId(c.id);
               go("chat");
             }}
-            onCompose={(c) => (c ? composeForChild(c) : openCompose())}
+            onCompose={(c) =>
+              c ? composeForChild(c) : openCompose("update", "notice", true)
+            }
+            onClassUpdate={() => newPost(true)}
+            onClassMessage={() => openCompose("update", "message", true)}
             onMural={() => {
               setChildId("all");
               go("mural");
@@ -2257,6 +2325,42 @@ function SchoolApp() {
         return (
           <>
             <Heading>Perto das{"\n"}famílias.</Heading>
+            {!family && (
+              <Card tone="lime">
+                <Copy bold size={20}>
+                  Uma turma. Todas as famílias.
+                </Copy>
+                <Copy size={12}>
+                  Compartilhe o dia e os retornos gerais de uma só vez.
+                </Copy>
+                <Chips
+                  items={data.classes.map((g) => ({
+                    id: g.id,
+                    label: `${g.name} · ${data.units.find((u) => u.id === g.unitId)?.name || ""}`,
+                  }))}
+                  value={teacherClassId}
+                  onChange={setTeacherClassId}
+                />
+                <Row
+                  title="Atualização na timeline"
+                  sub="Texto, vídeo ou material para toda a turma"
+                  icon="book-open"
+                  onPress={() => newPost(true)}
+                />
+                <Row
+                  title="Comunicado para a turma"
+                  sub="Avisos, solicitações e autorizações"
+                  icon="bell"
+                  onPress={() => openCompose("update", "notice", true)}
+                />
+                <Row
+                  title="Mensagem para todos"
+                  sub="Envio coletivo; respostas em conversas privadas"
+                  icon="send"
+                  onPress={() => openCompose("update", "message", true)}
+                />
+              </Card>
+            )}
             <Row
               title="Mural da escola"
               sub="Textos, vídeos e materiais"
@@ -2388,45 +2492,85 @@ function SchoolApp() {
       case "compose":
         return (
           <>
-            <Heading>Uma mensagem.{"\n"}O destino certo.</Heading>
+            <Heading>
+              {composeChannel === "message"
+                ? "Uma mensagem para a turma."
+                : "Um comunicado. O destino certo."}
+            </Heading>
             <Copy bold size={12}>
               Destinatários
             </Copy>
+            <Copy size={12} color={C.blue}>
+              {recipients.length} alunos selecionados · todos os responsáveis
+              vinculados receberão
+            </Copy>
+            <Button outline onPress={() => setShowRecipients(!showRecipients)}>
+              {showRecipients
+                ? "Ocultar seleção individual"
+                : "Ajustar alunos individualmente"}
+            </Button>
             <View style={{ gap: 8, marginVertical: 12 }}>
-              {children.map((c) => (
-                <Pressable
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: recipients.includes(c.id) }}
-                  key={c.id}
-                  onPress={() =>
-                    setRecipients((r) =>
-                      r.includes(c.id)
-                        ? r.filter((id) => id !== c.id)
-                        : [...r, c.id],
-                    )
-                  }
-                  style={[s.row, s.recipient]}
-                >
-                  <Icon
-                    name={recipients.includes(c.id) ? "check-square" : "square"}
-                    color={C.blue}
-                  />
-                  <ChildTag child={c} />
-                </Pressable>
-              ))}
+              {!family &&
+                data.classes.map((g) => {
+                  const group = children.filter((c) => c.classId === g.id);
+                  const checked =
+                    group.length > 0 &&
+                    group.every((c) => recipients.includes(c.id));
+                  return (
+                    <Row
+                      key={g.id}
+                      title={`Toda a turma · ${g.name}`}
+                      sub={`${group.length} alunos · ${data.units.find((u) => u.id === g.unitId)?.name || ""}`}
+                      icon={checked ? "check-square" : "square"}
+                      onPress={() =>
+                        setRecipients((r) =>
+                          checked
+                            ? r.filter((id) => !group.some((c) => c.id === id))
+                            : [...new Set([...r, ...group.map((c) => c.id)])],
+                        )
+                      }
+                    />
+                  );
+                })}
+              {showRecipients &&
+                children.map((c) => (
+                  <Pressable
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: recipients.includes(c.id) }}
+                    key={c.id}
+                    onPress={() =>
+                      setRecipients((r) =>
+                        r.includes(c.id)
+                          ? r.filter((id) => id !== c.id)
+                          : [...r, c.id],
+                      )
+                    }
+                    style={[s.row, s.recipient]}
+                  >
+                    <Icon
+                      name={
+                        recipients.includes(c.id) ? "check-square" : "square"
+                      }
+                      color={C.blue}
+                    />
+                    <ChildTag child={c} />
+                  </Pressable>
+                ))}
             </View>
             <Copy size={11} color={C.muted}>
               Cada família recebe somente o contexto do seu filho.
             </Copy>
-            <Chips
-              items={[
-                { id: "update", label: "Atualização" },
-                { id: "request", label: "Solicitação" },
-                { id: "authorization", label: "Autorização" },
-              ]}
-              value={kind}
-              onChange={setKind}
-            />
+            {composeChannel === "notice" && (
+              <Chips
+                items={[
+                  { id: "update", label: "Atualização" },
+                  { id: "request", label: "Solicitação" },
+                  { id: "authorization", label: "Autorização" },
+                ]}
+                value={kind}
+                onChange={setKind}
+              />
+            )}
             <View style={{ gap: 16, marginVertical: 20 }}>
               <Field
                 label="Título"
@@ -3012,14 +3156,20 @@ function SchoolApp() {
                         note,
                         published: true,
                       }
-                    : {
-                        type: "notice.create",
-                        title,
-                        body,
-                        kind,
-                        childIds: recipients,
-                        due: kind === "update" ? null : due,
-                      },
+                    : composeChannel === "message"
+                      ? {
+                          type: "message.send",
+                          childIds: recipients,
+                          body: `${title}\n\n${body}`,
+                        }
+                      : {
+                          type: "notice.create",
+                          title,
+                          body,
+                          kind,
+                          childIds: recipients,
+                          due: kind === "update" ? null : due,
+                        },
                 );
                 if (ok) {
                   setReview(false);

@@ -863,14 +863,23 @@ export function applyCommand(
       createdAt: now,
     });
   } else if (type === "message.send") {
-    requireChild(command.childId);
-    next.messages.push({
-      id: id(),
-      childId: command.childId,
-      senderId: actor.id,
-      body: text(command.body),
-      createdAt: now,
-    });
+    const recipients =
+      command.childIds === undefined ? [command.childId] : command.childIds;
+    if (!Array.isArray(recipients) || !recipients.length)
+      fail("Selecione os destinatários.");
+    if (command.childIds !== undefined && actor.role === "family")
+      fail("Envio coletivo disponível apenas para a equipe escolar.", 403);
+    const childIds = [...new Set(recipients)];
+    childIds.forEach(requireChild);
+    const body = text(command.body);
+    for (const childId of childIds)
+      next.messages.push({
+        id: id(),
+        childId,
+        senderId: actor.id,
+        body,
+        createdAt: now,
+      });
   } else if (type === "notice.create") {
     if (!Array.isArray(command.childIds) || !command.childIds.length)
       fail("Selecione os destinatários.");
