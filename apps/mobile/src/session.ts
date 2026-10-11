@@ -35,11 +35,13 @@ function emptyState(actor: Actor): VisibleStore {
   state.actors = [actor];
   return visibleState(state, actor);
 }
-export function useSchool() {
+export function useSchool(authSession?: { token: string; actor: Actor }) {
   const [store, setStore] = useState<Store>(createSeed),
     [remote, setRemote] = useState<VisibleStore | null>(null),
-    [actorId, setActorId] = useState("rafael"),
-    [sessionActor, setSessionActor] = useState<Actor>(createSeed().actors[0]),
+    [actorId, setActorId] = useState(authSession?.actor.id || "rafael"),
+    [sessionActor, setSessionActor] = useState<Actor>(
+      authSession?.actor || createSeed().actors[0],
+    ),
     [profiles, setProfiles] = useState<Actor[]>(createSeed().actors),
     [ready, setReady] = useState(false),
     [busy, setBusy] = useState(false),
@@ -81,9 +83,13 @@ export function useSchool() {
     (async () => {
       try {
         if (base) {
-          const ps = await request("/demo/profiles");
-          if (active) setProfiles(ps);
-          const session = await request("/demo/session", "POST", { actorId });
+          const session =
+            authSession ||
+            (await request("/demo/session", "POST", { actorId }));
+          if (!authSession) {
+            const ps = await request("/demo/profiles");
+            if (active) setProfiles(ps);
+          }
           if (!active) return;
           token.current = session.token;
           setSessionActor(session.actor);
@@ -172,6 +178,7 @@ export function useSchool() {
     }
   }
   async function switchRole(id: string) {
+    if (authSession) return false;
     if (id === actorId) return true;
     if (locking.current) return false;
     const next = (base ? profiles : store.actors).find(
@@ -214,6 +221,12 @@ export function useSchool() {
     };
   }
   return {
+    logout: async () => {
+      if (base && token.current) await request("/session/logout", "POST", {});
+      token.current = "";
+      setRemote(null);
+      setReady(false);
+    },
     loadAudit,
     data: base
       ? remote || emptyState(sessionActor)

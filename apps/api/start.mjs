@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { authenticate } from "./auth.mjs";
 import { readFile, mkdir, writeFile, rename } from "node:fs/promises";
 import { randomUUID, randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -60,6 +61,7 @@ if (freshKey) {
   sealAudit(state, auditKey);
 }
 const sessions = new Map();
+const loginAttempts = new Map();
 let queue = Promise.resolve();
 async function persist(next) {
   sealAudit(next, auditKey);
@@ -115,6 +117,7 @@ const server = createServer(async (req, res) => {
     path: [
       "/health",
       "/app/version",
+      "/auth/login",
       "/demo/session",
       "/demo/profiles",
       "/state",
@@ -178,7 +181,7 @@ const server = createServer(async (req, res) => {
         } catch {}
       return send(200, releasePolicy(config[platform], platform));
     }
-    if (!demo)
+    if (!demo && route.startsWith("/demo/"))
       return send(503, {
         error:
           "Demonstração desativada. Autenticação de produção ainda não configurada.",
@@ -204,6 +207,57 @@ const server = createServer(async (req, res) => {
         throw e;
       }
       if (body?.type && auditLabels[body.type]) action = body.type;
+    }
+    if (route === "/auth/login" && req.method === "POST") {
+      action = "session.rejected";
+      if (!process.env.THINKEDU_AUTH_FILE) {
+        return send(503, {
+          error:
+            "Sua escola ainda não ativou o acesso. Entre em contato com a secretaria.",
+        });
+      }
+      const address = req.socket.remoteAddress || "unknown";
+      const attempt = loginAttempts.get(address) || {
+        count: 0,
+        reset: Date.now() + 900000,
+      };
+      if (attempt.reset < Date.now()) {
+        attempt.count = 0;
+        attempt.reset = Date.now() + 900000;
+      }
+      if (attempt.count >= 10)
+        return send(429, {
+          error: "Muitas tentativas. Aguarde 15 minutos para tentar novamente.",
+        });
+      attempt.count++;
+      loginAttempts.set(address, attempt);
+      // Keep the limiter bounded; each source has a fixed window.
+      for (const [key, value] of loginAttempts)
+        if (value.reset < Date.now()) loginAttempts.delete(key);
+      if (loginAttempts.size > 10000)
+        loginAttempts.delete(loginAttempts.keys().next().value);
+      const accounts = JSON.parse(
+        await readFile(process.env.THINKEDU_AUTH_FILE, "utf8"),
+      );
+      actor = authenticate(accounts, state, body.email, body.password);
+      if (!actor) {
+        const e = Error("E-mail ou senha incorretos.");
+        e.status = 401;
+        throw e;
+      }
+      action = "session.login";
+      await log(actor, action, context);
+      logged = true;
+      loginAttempts.delete(address);
+      const newToken = randomBytes(32).toString("hex");
+      sessions.set(newToken, {
+        actorId: actor.id,
+        expires: Date.now() + 3600000,
+      });
+      return send(200, {
+        token: newToken,
+        actor: effectiveActor(state, actor),
+      });
     }
     if (route === "/demo/profiles" && req.method === "GET") {
       action = "profiles.read";

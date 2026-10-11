@@ -41,6 +41,7 @@ import { VersionNotice } from "./src/VersionNotice";
 import { TeacherWorkspace, type TeacherPage } from "./src/TeacherWorkspace";
 import { attendanceLabel } from "../../packages/core/teacher.mjs";
 import { Child, useSchool } from "./src/session";
+import { LoginScreen, type LoginSession } from "./src/LoginScreen";
 
 type IconName = React.ComponentProps<typeof Feather>["name"];
 type Page =
@@ -395,8 +396,14 @@ function Row({
 }
 
 import { filterUnitView } from "../../packages/core/units.mjs";
-function SchoolApp() {
-  const school = useSchool(),
+function SchoolApp({
+  authSession,
+  onLogout,
+}: {
+  authSession?: LoginSession;
+  onLogout: () => void;
+}) {
+  const school = useSchool(authSession),
     { actor, busy, dispatch } = school;
   const [unitId, setUnitId] = useState("all");
   const data = filterUnitView(
@@ -2860,7 +2867,7 @@ function SchoolApp() {
           ];
   return (
     <View style={s.stage}>
-      {Platform.OS === "web" && width > 1000 && (
+      {!authSession && Platform.OS === "web" && width > 1000 && (
         <View style={s.desktopIntro}>
           <Text style={[s.wordmark, { fontSize: 44 }]}>
             think<Text style={{ color: C.blue }}>Edu</Text>
@@ -2898,24 +2905,49 @@ function SchoolApp() {
           behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
           <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
-            <View style={s.demoBar}>
-              <Copy size={10} color={C.muted}>
-                DEMO ·{" "}
-                {school.connected ? "API conectada" : "salvo neste dispositivo"}
-              </Copy>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => {
-                  setProfileSearch("");
-                  setProfilePicker(true);
-                  void school.refreshProfiles();
-                }}
-              >
-                <Copy bold color={C.blue} size={10}>
-                  {roleLabels[actor.role]} ⇄
+            {!authSession && (
+              <View style={s.demoBar}>
+                <Copy size={10} color={C.muted}>
+                  DEMO ·{" "}
+                  {school.connected
+                    ? "API conectada"
+                    : "salvo neste dispositivo"}
                 </Copy>
-              </Pressable>
-            </View>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setProfileSearch("");
+                    setProfilePicker(true);
+                    void school.refreshProfiles();
+                  }}
+                >
+                  <Copy bold color={C.blue} size={10}>
+                    {roleLabels[actor.role]} ⇄
+                  </Copy>
+                </Pressable>
+              </View>
+            )}
+            {authSession && (
+              <View style={s.demoBar}>
+                <Copy size={11} color={C.muted}>
+                  {actor.name}
+                </Copy>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={async () => {
+                    try {
+                      await school.logout();
+                    } finally {
+                      onLogout();
+                    }
+                  }}
+                >
+                  <Copy size={11} bold color={C.blue}>
+                    Sair
+                  </Copy>
+                </Pressable>
+              </View>
+            )}
             {school.ready ? (
               <>
                 <ScrollView
@@ -3209,6 +3241,8 @@ function SchoolApp() {
   );
 }
 export default function App() {
+  const [authSession, setAuthSession] = useState<LoginSession | undefined>();
+  const [preview, setPreview] = useState(false);
   const [loaded, error] = useFonts({
     JakartaRegular: PlusJakartaSans_400Regular,
     JakartaMedium: PlusJakartaSans_500Medium,
@@ -3219,7 +3253,20 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar style="dark" />
       {loaded ? (
-        <SchoolApp />
+        authSession || preview ? (
+          <SchoolApp
+            authSession={authSession}
+            onLogout={() => {
+              setAuthSession(undefined);
+              setPreview(false);
+            }}
+          />
+        ) : (
+          <LoginScreen
+            onLogin={setAuthSession}
+            onPreview={__DEV__ ? () => setPreview(true) : undefined}
+          />
+        )
       ) : (
         <View style={s.loading}>
           <ActivityIndicator color={C.blue} />
