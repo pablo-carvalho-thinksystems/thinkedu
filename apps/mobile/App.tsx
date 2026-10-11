@@ -664,7 +664,7 @@ function SchoolApp({
         const open = (
           response: import("expo-notifications").NotificationResponse,
         ) => {
-          const meta = response.notification.request.content.data;
+          const meta = response.notification.request.content.data || {};
           if (
             !active ||
             meta.actorId !== actor.id ||

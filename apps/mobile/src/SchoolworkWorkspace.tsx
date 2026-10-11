@@ -245,7 +245,7 @@ export async function clearWorkReminders(actorId: string) {
   const scheduled = await Notifications.getAllScheduledNotificationsAsync();
   await Promise.all(
     scheduled
-      .filter((n) => n.content.data.actorId === actorId)
+      .filter((n) => n.content.data?.actorId === actorId)
       .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier)),
   );
   const keys = (await AsyncStorage.getAllKeys()).filter((k) =>
