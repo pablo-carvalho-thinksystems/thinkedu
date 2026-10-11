@@ -1,3 +1,4 @@
+import { resolveAssistantChild } from "./assistant-context.mjs";
 import { can } from "./permissions.mjs";
 const normalize = (s) =>
   String(s)
@@ -96,7 +97,7 @@ export function consultAssistant(
     !normalize(child.name).split(" ").includes(named)
   )
     return {
-      answer: `Esta conversa está vinculada a ${child.name}. Selecione o filho desejado antes de consultar a rotina. Só posso consultar alunos vinculados ao seu acesso.`,
+      answer: `Esta conversa está vinculada a ${child.name}. Me diga o nome da criança na sua pergunta para consultar a rotina correta. Só posso consultar alunos vinculados ao seu acesso.`,
       sources: [],
       tool: "student_context",
       department: null,
@@ -230,8 +231,13 @@ export function applyAssistant(
   if (command.type === "assistant.ask") {
     if (actor.role !== "family")
       fail("O assistente atende os responsáveis.", 403);
-    requireChild(command.childId);
     const query = text(command.question, 2000);
+    if (!command.childId) {
+      const context = resolveAssistantChild(view.children, query);
+      if (!context.childId) fail(context.clarification, 422);
+      command = { ...command, childId: context.childId };
+    }
+    requireChild(command.childId);
     const found =
       trustedAnswer || consultAssistant(view, query, command.childId, now);
     const thread = {

@@ -9,6 +9,7 @@ import {
   ScrollView,
 } from "react-native";
 import type { VisibleStore, Actor } from "../../../packages/core/model.mjs";
+import { resolveAssistantChild } from "../../../packages/core/assistant-context.mjs";
 const departments: Record<string, string> = {
   teacher: "Professor(a)",
   finance: "Financeiro",
@@ -51,7 +52,10 @@ export function AssistantWorkspace({
   dispatch: (c: Record<string, unknown> & { type: string }) => Promise<boolean>;
   onRefresh: () => Promise<void>;
 }) {
-  const [childId, setChild] = useState(data.children[0]?.id || ""),
+  const [pending, setPending] = useState<{
+      question: string;
+      clarification: string;
+    } | null>(null),
     [question, setQuestion] = useState(""),
     [selected, setSelected] = useState("");
   useEffect(() => {
@@ -73,13 +77,25 @@ export function AssistantWorkspace({
   ];
   async function ask() {
     if (!question.trim()) return;
+    const context = resolveAssistantChild(data.children, question);
+    if (!context.childId) {
+      setPending({
+        question: pending?.question || question,
+        clarification: context.clarification || "Qual é o nome da criança?",
+      });
+      setQuestion("");
+      return;
+    }
     const success = await dispatch({
       type: "assistant.ask",
-      childId,
-      question,
+      childId: context.childId,
+      question: pending
+        ? `${pending.question} (Sobre ${data.children.find((c) => c.id === context.childId)?.name})`
+        : question,
     });
     if (success) {
       setQuestion("");
+      setPending(null);
       setSelected("latest");
     }
   }
@@ -168,30 +184,15 @@ export function AssistantWorkspace({
         Consulto registros publicados e orientações aprovadas. Quando faltar uma
         resposta, encaminho sua pergunta à escola.
       </Txt>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 8 }}
-      >
-        {data.children.map((c) => (
-          <Pressable
-            key={c.id}
-            accessibilityRole="button"
-            onPress={() => {
-              setChild(c.id);
-              setSelected("");
-            }}
-            style={[
-              s.chip,
-              { backgroundColor: childId === c.id ? "#d7e98a" : "white" },
-            ]}
-          >
-            <Txt bold size={12}>
-              {c.name}
-            </Txt>
-          </Pressable>
-        ))}
-      </ScrollView>
+      {pending && (
+        <View style={s.bubble}>
+          <Txt bold size={10}>
+            SAMUCA
+          </Txt>
+          <Txt>{pending.clarification}</Txt>
+          <Txt size={11}>Sua pergunta: {pending.question}</Txt>
+        </View>
+      )}
       {current ? (
         <View style={{ gap: 12 }}>
           <Pressable accessibilityRole="button" onPress={() => setSelected("")}>
@@ -252,7 +253,7 @@ export function AssistantWorkspace({
             />
             <Pressable
               accessibilityRole="button"
-              disabled={busy || !question.trim() || !childId}
+              disabled={busy || !question.trim()}
               onPress={() => void ask()}
               style={[s.send, { opacity: busy || !question.trim() ? 0.6 : 1 }]}
             >
@@ -278,7 +279,7 @@ export function AssistantWorkspace({
             Suas conversas
           </Txt>
           {data.assistantThreads
-            .filter((t) => t.childId === childId)
+            .filter((t) => t.actorId === actor.id)
             .map((t) => (
               <Pressable
                 key={t.id}
