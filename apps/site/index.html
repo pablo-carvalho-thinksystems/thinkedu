@@ -212,9 +212,235 @@
           </div>
         </div>
       </section>
+      <section class="familyStory section">
+        <div class="familyPhoto reveal">
+          <img
+            src="/assets/family.png"
+            alt="Cena ilustrativa de um pai e sua filha compartilhando uma descoberta"
+            loading="lazy"
+          /><span
+            >MENOS TEMPO PROCURANDO.<br /><b>MAIS TEMPO ESTANDO JUNTO.</b></span
+          >
+        </div>
+        <div class="reveal">
+          <span class="eyebrow">NA VIDA REAL, O TEMPO IMPORTA.</span>
+          <h2>Um olhar rápido.<br /><span>Um dia mais perto.</span></h2>
+          <p>
+            Entre no app e encontre o que precisa: o último registro da escola,
+            a próxima entrega ou aquela foto que rende uma conversa na volta
+            para casa.
+          </p>
+          <p>
+            Tem mais de um filho? Troque de criança sem sair da conta. A agenda
+            respeita a turma de cada um. As cobranças aparecem juntas, para
+            facilitar a organização da família.
+          </p>
+          <a class="storyLink" href="#app-por-dentro"
+            >Veja o app por dentro <span>↓</span></a
+          >
+        </div>
+      </section>
+      <section class="appTour section" id="app-por-dentro">
+        <div class="tourHeading reveal">
+          <span class="eyebrow">TELAS REAIS · DADOS DE DEMONSTRAÇÃO</span>
+          <h2>Bonito de ver.<br /><span>Fácil de encontrar.</span></h2>
+          <p>
+            Explore cada área. Um lugar claro para cada parte da vida escolar.
+          </p>
+        </div>
+        <div class="tourGrid">
+          <div class="tourPreview reveal">
+            <div class="tourPhone">
+              <img
+                id="tour-screen"
+                src="/assets/screens/day.jpg"
+                alt="Tela do app mostrando os registros da rotina de Lia"
+                loading="lazy"
+              />
+            </div>
+            <div
+              class="tourCaption"
+              id="tour-panel"
+              role="tabpanel"
+              aria-labelledby="tour-day"
+            >
+              <b id="tour-title">O dia do seu filho, com contexto.</b>
+              <p id="tour-caption">
+                Alimentação, descanso, presença e observações publicadas pela
+                escola, numa sequência fácil de acompanhar.
+              </p>
+            </div>
+            <small
+              >Capturas do aplicativo em desenvolvimento. Imagens e dados
+              fictícios.</small
+            >
+          </div>
+          <div
+            class="tourFeatures"
+            role="tablist"
+            aria-label="Áreas do app"
+            aria-orientation="vertical"
+          >
+            <button
+              id="tour-day"
+              role="tab"
+              aria-selected="true"
+              aria-controls="tour-panel"
+              data-tour="day"
+            >
+              <span>01 / ROTINA</span><b>Como foi o dia?</b>
+              <p>
+                Encontre os registros publicados e o olhar da professora, com o
+                contexto da criança.
+              </p>
+              <i>↗</i>
+            </button>
+            <button
+              id="tour-photos"
+              role="tab"
+              aria-selected="false"
+              aria-controls="tour-panel"
+              data-tour="photos"
+              tabindex="-1"
+            >
+              <span>02 / FOTOS</span><b>As descobertas ganham imagem.</b>
+              <p>
+                Veja os momentos compartilhados e leve uma nova história para a
+                conversa em casa.
+              </p>
+              <i>↗</i>
+            </button>
+            <button
+              id="tour-calendar"
+              role="tab"
+              aria-selected="false"
+              aria-controls="tour-panel"
+              data-tour="calendar"
+              tabindex="-1"
+            >
+              <span>03 / CALENDÁRIO</span><b>Uma agenda para cada turma.</b>
+              <p>
+                Datas destacadas, eventos e provas. Toque para abrir orientações
+                e conteúdo programático.
+              </p>
+              <i>↗</i>
+            </button>
+            <button
+              id="tour-homework"
+              role="tab"
+              aria-selected="false"
+              aria-controls="tour-panel"
+              data-tour="homework"
+              tabindex="-1"
+            >
+              <span>04 / ATIVIDADES E TRABALHOS</span
+              ><b>O que fazer. Quando entregar.</b>
+              <p>
+                Para casa e trabalhos com prazo, material, comentário do
+                professor e registro de entrega.
+              </p>
+              <i>↗</i>
+            </button>
+            <button
+              id="tour-requests"
+              role="tab"
+              aria-selected="false"
+              aria-controls="tour-panel"
+              data-tour="requests"
+              tabindex="-1"
+            >
+              <span>05 / SOLICITAÇÕES ONLINE</span
+              ><b>Um pedido. Um histórico.</b>
+              <p>
+                Escolha o serviço oferecido pela escola, envie o anexo
+                necessário e acompanhe o protocolo.
+              </p>
+              <i>↗</i>
+            </button>
+            <button
+              id="tour-finance"
+              role="tab"
+              aria-selected="false"
+              aria-controls="tour-panel"
+              data-tour="finance"
+              tabindex="-1"
+            >
+              <span>06 / FINANCEIRO</span><b>A família inteira, numa visão.</b>
+              <p>
+                Consulte valores e vencimentos juntos. O pagamento depende da
+                integração financeira da escola.
+              </p>
+              <i>↗</i>
+            </button>
+            <button
+              id="tour-wall"
+              role="tab"
+              aria-selected="false"
+              aria-controls="tour-panel"
+              data-tour="wall"
+              tabindex="-1"
+            >
+              <span>07 / MURAL E MATERIAIS</span
+              ><b>A escola também chega em casa.</b>
+              <p>
+                Recados, vídeos e arquivos compartilhados. Conteúdo organizado
+                para retomar quando precisar.
+              </p>
+              <i>↗</i>
+            </button>
+            <button
+              id="tour-samuca"
+              role="tab"
+              aria-selected="false"
+              aria-controls="tour-panel"
+              data-tour="samuca"
+              tabindex="-1"
+            >
+              <span>08 / SEU ASSISTENTE</span><b>Pergunte ao Samuca.</b>
+              <p>
+                Consulte registros e orientações. Se faltar informação, a
+                pergunta encontra o setor responsável.
+              </p>
+              <i>↗</i>
+            </button>
+          </div>
+        </div>
+      </section>
+      <section class="samucaStory section">
+        <div class="samucaArt reveal">
+          <img
+            src="/assets/samuca.png"
+            alt="Samuca, o personagem do thinkEdu: um livro azul sorridente"
+            loading="lazy"
+          /><span>OI! EU SOU O<br /><b>SAMUCA.</b></span>
+        </div>
+        <div class="samucaCopy reveal">
+          <span class="eyebrow light"
+            >UM NOVO JEITO DE ENCONTRAR RESPOSTAS.</span
+          >
+          <h2>A vida escolar.<br /><em>Na sua conversa.</em></h2>
+          <div class="sampleQuestion">“Tenho faturas em aberto?”</div>
+          <div class="sampleQuestion">“O que vai cair na prova?”</div>
+          <div class="sampleQuestion">“Como foi o dia da Lia?”</div>
+          <p>
+            O Samuca consulta informações autorizadas e mostra as fontes. Sem
+            resposta confirmada? Ele encaminha a dúvida à escola e apresenta o
+            retorno nesta conversa.
+          </p>
+          <p class="samucaNote">
+            Orientações gerais só entram na base após revisão da escola.
+            Informações particulares continuam privadas. Experiência inicial em
+            desenvolvimento.
+          </p>
+          <button class="pill contact-open">
+            Conheça o thinkEdu <span>↗</span>
+          </button>
+        </div>
+      </section>
+
       <section class="cinema">
         <img
-          src="/assets/atelier.png"
+          src="/assets/classroom.png"
           alt="Cena ilustrativa de aprendizado e cuidado na educação infantil"
           loading="lazy"
         />
@@ -324,8 +550,8 @@
           <div class="detailCard">
             <span>UM DIA CHEIO DE DESCOBERTAS</span
             ><img
-              src="/assets/atelier.png"
-              alt="Atividade ilustrativa de modelagem em argila"
+              src="/assets/family.png"
+              alt="Pai e filha fictícios compartilhando uma descoberta"
               loading="lazy"
             />
             <div>

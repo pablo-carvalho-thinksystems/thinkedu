@@ -1,3 +1,4 @@
+import { AssistantDesk } from "./AssistantDesk";
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -24,6 +25,7 @@ import { consolidateInvoices } from "../../../packages/core/billing.mjs";
 import lia from "../../mobile/assets/lia-avatar.png";
 import bento from "../../mobile/assets/bento-avatar.png";
 import "./style.css";
+import { ServiceDesk } from "./ServiceDesk";
 import { AuditWorkspace } from "./AuditWorkspace";
 import { filterUnitView } from "../../../packages/core/units.mjs";
 const seed = createSeed(),
@@ -40,6 +42,9 @@ const pages = [
   "Usuários e acessos",
   "Unidades",
   "Auditoria",
+  "Atividades e entregas",
+  "Solicitações online",
+  "Samuca · Assistente",
 ];
 const pagePermissions = [
   "routines.read",
@@ -52,6 +57,9 @@ const pagePermissions = [
   "users.manage",
   "units.manage",
   "audit.read",
+  "assignments.read",
+  "requests.read",
+  "assistant.read",
 ];
 function Icon({ name, size = 20 }: { name: string; size?: number }) {
   const paths: Record<string, string> = {
@@ -447,7 +455,7 @@ function App() {
     setModal(kind);
   };
   async function dispatch(command: Record<string, unknown>) {
-    if (lock.current) return;
+    if (lock.current) return false;
     lock.current = true;
     setBusy(true);
     setError("");
@@ -481,8 +489,10 @@ function App() {
           .catch(() => {});
       setModal("");
       setToast("Salvo. As informações foram atualizadas.");
+      return true;
     } catch (e) {
       setError((e as Error).message);
+      return false;
     } finally {
       lock.current = false;
       setBusy(false);
@@ -738,6 +748,10 @@ function App() {
                         "settings",
                         "people",
                         "home",
+                        "check",
+                        "calendar",
+                        "message",
+                        "message",
                       ][i]
                     }
                   />
@@ -806,34 +820,45 @@ function App() {
         </div>
         <main>
           <section className="unitContext" aria-label="Contexto da unidade">
-            <span className="unitContextIcon" aria-hidden="true">⌂</span>
-          <label className="unitFilter">
-            <span className="unitCaption">UNIDADE EM VISUALIZAÇÃO</span>
-            <select
-              aria-label="Filtrar unidade"
-              value={unitId}
-              onChange={(e) => {
-                setUnit(e.target.value);
-                setClass("all");
-                setSearch("");
-              }}
-            >
-              <option value="all">Todas as unidades</option>
-              {authorized.units.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-          </label>
+            <span className="unitContextIcon" aria-hidden="true">
+              ⌂
+            </span>
+            <label className="unitFilter">
+              <span className="unitCaption">UNIDADE EM VISUALIZAÇÃO</span>
+              <select
+                aria-label="Filtrar unidade"
+                value={unitId}
+                onChange={(e) => {
+                  setUnit(e.target.value);
+                  setClass("all");
+                  setSearch("");
+                }}
+              >
+                <option value="all">Todas as unidades</option>
+                {authorized.units.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+            </label>
             <div className="unitContextSummary">
-              <strong>{shown.classes.length} turmas <span>·</span> {shown.children.length} alunos</strong>
-              <span>{unitId === "all"
-                ? `${authorized.units.length} unidades autorizadas · visão conjunta`
-                : (() => {
-                    const unit = authorized.units.find((u) => u.id === unitId);
-                    return unit ? `${unit.address.street}, ${unit.address.number} · ${unit.address.neighborhood}, ${unit.address.city}` : "";
-                  })()}</span>
+              <strong>
+                {shown.classes.length} turmas <span>·</span>{" "}
+                {shown.children.length} alunos
+              </strong>
+              <span>
+                {unitId === "all"
+                  ? `${authorized.units.length} unidades autorizadas · visão conjunta`
+                  : (() => {
+                      const unit = authorized.units.find(
+                        (u) => u.id === unitId,
+                      );
+                      return unit
+                        ? `${unit.address.street}, ${unit.address.number} · ${unit.address.neighborhood}, ${unit.address.city}`
+                        : "";
+                    })()}
+              </span>
             </div>
           </section>
           <header>
@@ -853,11 +878,14 @@ function App() {
                     "As pessoas certas, com o acesso certo.",
                     "Uma escola, vários endereços. Cada unidade com seu espaço.",
                     "Quem fez, quando e o que mudou. Tudo em um histórico.",
+                    "Prazos, orientações e conteúdo programático, com entregas por aluno.",
+                    "Tipos configuráveis, anexos e respostas em um histórico por protocolo.",
+                    "Dúvidas encaminhadas, retornos privados e orientações revisadas pela escola.",
                   ][pages.indexOf(page)]
                 }
               </p>
             </div>
-            {page !== pages[9] &&
+            {![pages[9], pages[10], pages[11], pages[12]].includes(page) &&
               can(
                 actor,
                 page === pages[8]
@@ -905,6 +933,32 @@ function App() {
                 </button>
               )}
           </header>
+          {page === pages[10] && (
+            <ServiceDesk
+              key={`assignments-${unitId}`}
+              mode="assignments"
+              data={shown}
+              busy={busy}
+              dispatch={dispatch}
+            />
+          )}
+          {page === pages[12] && (
+            <AssistantDesk
+              key={unitId}
+              data={shown}
+              busy={busy}
+              dispatch={dispatch}
+            />
+          )}
+          {page === pages[11] && (
+            <ServiceDesk
+              key={`requests-${unitId}`}
+              mode="requests"
+              data={shown}
+              busy={busy}
+              dispatch={dispatch}
+            />
+          )}
           {page === pages[9] && can(actor, "audit.read") && (
             <AuditWorkspace
               data={authorized}

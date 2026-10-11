@@ -1,0 +1,10 @@
+{
+  "tool": "Built-in image_gen",
+  "fictionalPeople": true,
+  "assets": [
+    {"file":"samuca.png","alsoUsedIn":"../mobile/assets/samuca.png","prompt":"Use case: stylized-concept. Asset type: friendly virtual assistant character for thinkEdu school parent app, named Samuca. Create one polished charming 3D clay character: a small rounded cobalt-blue living book with cream pages, two warm expressive eyes, subtle smiling mouth, small coral shoes, tiny lime rounded tuft on top. One short soft arm waves hello, other holds a small cream note. Sophisticated editorial clay/toy rendering, gentle tactile matte textures, clean silhouette readable in a 64px avatar. Welcoming and trustworthy, delightful to parents, not a robot, no asterisk, no text or letters, no logos. Full body centered, generous transparent margin, isolated on genuinely transparent background with alpha. Palette cobalt #304bff, navy #172d65, cream #fff8ef, lime #d7e98a and coral #ff9b80. Soft studio light, no scenery, no extra characters."},
+    {"file":"family.png","promptBrief":"Natural documentary-style fictional Brazilian father seated on a cream couch with his daughter showing a drawing, looking at smartphone, warm daylight, premium editorial school-family campaign, no text or logos."},
+    {"file":"classroom.png","promptBrief":"Natural documentary-style fictional Brazilian teacher helping three young children create a colorful geometric paper collage in a warm classroom, tactile materials, premium editorial school-family campaign, no text or logos."}
+  ],
+  "screenshots": "Real browser captures of thinkEdu development app using fictitious demonstration records. No real students or families."
+}

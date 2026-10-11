@@ -1801,3 +1801,421 @@ body.dialog-open {
 [hidden] {
   display: none !important;
 }
+
+.familyStory {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 80px;
+  align-items: center;
+  padding-top: 130px;
+  padding-bottom: 130px;
+}
+.familyPhoto {
+  position: relative;
+  border-radius: 32px;
+  overflow: hidden;
+  min-height: 540px;
+}
+.familyPhoto > img {
+  width: 100%;
+  height: 540px;
+  object-fit: cover;
+  object-position: 59% center;
+}
+.familyPhoto > span {
+  position: absolute;
+  bottom: 28px;
+  left: 28px;
+  color: white;
+  font-size: 12px;
+  letter-spacing: 1px;
+  line-height: 1.8;
+  background: #172d65cf;
+  padding: 18px 22px;
+  border-radius: 18px;
+  backdrop-filter: blur(12px);
+}
+.familyStory h2 {
+  font-size: clamp(40px, 4.6vw, 70px);
+  line-height: 1.06;
+  letter-spacing: -3px;
+  margin: 24px 0;
+}
+.familyStory h2 > span {
+  color: var(--blue);
+}
+.familyStory p {
+  font-size: 16px;
+  line-height: 1.9;
+  color: #647184;
+  max-width: 470px;
+}
+.storyLink {
+  display: inline-flex;
+  gap: 45px;
+  margin-top: 24px;
+  font-family: Jakarta;
+  font-weight: 700;
+  color: var(--blue);
+  border-bottom: 1px solid #304bff;
+  padding-bottom: 12px;
+}
+.appTour {
+  background: #edf0e8;
+  padding-top: 110px;
+  padding-bottom: 120px;
+  border-radius: 50px;
+}
+.tourHeading {
+  max-width: 760px;
+  margin-bottom: 70px;
+}
+.tourHeading h2 {
+  font-size: clamp(40px, 5.5vw, 78px);
+  line-height: 1.08;
+  letter-spacing: -3px;
+  margin: 22px 0;
+}
+.tourHeading h2 span {
+  color: var(--blue);
+}
+.tourHeading > p {
+  color: #647184;
+}
+.tourGrid {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: 70px;
+  align-items: start;
+}
+.tourPreview {
+  position: sticky;
+  top: 110px;
+  text-align: center;
+}
+.tourPhone {
+  width: 300px;
+  margin: auto;
+  border: 8px solid #192d49;
+  border-radius: 42px;
+  overflow: hidden;
+  box-shadow: 0 40px 80px #172d6524;
+  background: white;
+  transform: rotate(-2deg);
+  transition: transform 0.4s;
+}
+.tourPhone:hover {
+  transform: rotate(0);
+}
+.tourPhone > img {
+  width: 100%;
+  display: block;
+  aspect-ratio: 430/932;
+  object-fit: cover;
+}
+.tourCaption {
+  margin-top: 30px;
+  padding: 0 10px;
+  min-height: 100px;
+}
+.tourCaption > b {
+  font-size: 18px;
+}
+.tourCaption p {
+  font-size: 13px;
+  line-height: 1.7;
+  color: #637184;
+}
+.tourPreview > small {
+  display: block;
+  color: #6a7584;
+  font-size: 10px;
+  line-height: 1.8;
+  max-width: 300px;
+  margin: auto;
+}
+.tourFeatures {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.tourFeatures > button {
+  position: relative;
+  background: #ffffffa3;
+  border: 1px solid #d7ded5;
+  border-radius: 25px;
+  text-align: left;
+  padding: 25px;
+  cursor: pointer;
+  min-height: 205px;
+  color: var(--ink);
+  transition:
+    transform 0.3s,
+    background 0.3s,
+    border-color 0.3s;
+}
+.tourFeatures > button:hover {
+  transform: translateY(-4px);
+  background: white;
+}
+.tourFeatures > button[aria-selected="true"] {
+  background: var(--navy);
+  color: white;
+  border-color: var(--navy);
+  box-shadow: 0 20px 40px #172d6520;
+}
+.tourFeatures > button > span {
+  display: block;
+  font-size: 9px;
+  font-family: Jakarta;
+  font-weight: 700;
+  letter-spacing: 1px;
+  margin-bottom: 14px;
+  color: #6e7d87;
+}
+.tourFeatures > button[aria-selected="true"] > span {
+  color: var(--lime);
+}
+.tourFeatures > button > b {
+  display: block;
+  font-size: 18px;
+  line-height: 1.4;
+  max-width: 230px;
+}
+.tourFeatures > button > p {
+  font-size: 12px;
+  line-height: 1.8;
+  color: #647184;
+  margin: 13px 0 0;
+}
+.tourFeatures > button[aria-selected="true"] > p {
+  color: #d4dff0;
+}
+.tourFeatures i {
+  position: absolute;
+  top: 22px;
+  right: 22px;
+  font-size: 17px;
+  font-style: normal;
+}
+.samucaStory {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 70px;
+  background: var(--navy);
+  color: white;
+  margin-top: 100px;
+  padding-top: 110px;
+  padding-bottom: 110px;
+  border-radius: 50px;
+}
+.samucaArt {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 540px;
+}
+.samucaArt > img {
+  width: 100%;
+  max-width: 470px;
+  filter: drop-shadow(0 30px 30px #07163866);
+  animation: samucaFloat 6s ease-in-out infinite;
+}
+.samucaArt > span {
+  position: absolute;
+  bottom: 10px;
+  right: 0;
+  background: var(--lime);
+  padding: 20px 30px;
+  color: var(--navy);
+  border-radius: 22px;
+  transform: rotate(7deg);
+  line-height: 1.5;
+  font-size: 14px;
+}
+.samucaArt b {
+  font-size: 27px;
+}
+.samucaCopy h2 {
+  font-size: clamp(42px, 4.8vw, 70px);
+  letter-spacing: -3px;
+  line-height: 1.08;
+  margin: 25px 0;
+}
+.samucaCopy h2 em {
+  color: var(--lime);
+  font-style: normal;
+}
+.sampleQuestion {
+  padding: 14px 18px;
+  border-radius: 16px;
+  background: #ffffff10;
+  border: 1px solid #ffffff20;
+  margin: 9px 0;
+  font-size: 14px;
+  width: fit-content;
+}
+.samucaCopy p {
+  font-size: 14px;
+  line-height: 1.9;
+  color: #d3dcf0;
+  max-width: 480px;
+}
+.samucaCopy p.samucaNote {
+  font-size: 11px;
+  color: #a9bbdb;
+}
+.samucaCopy .pill {
+  margin-top: 18px;
+  background: var(--lime);
+  color: var(--navy);
+}
+@keyframes samucaFloat {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-16px) rotate(1deg);
+  }
+}
+@media (max-width: 1050px) {
+  .familyStory {
+    gap: 35px;
+  }
+  .tourGrid {
+    grid-template-columns: 300px 1fr;
+    gap: 30px;
+  }
+  .tourPhone {
+    width: 270px;
+  }
+  .tourFeatures > button {
+    padding: 22px 18px;
+  }
+  .tourFeatures > button > b {
+    font-size: 16px;
+  }
+  .samucaStory {
+    gap: 35px;
+  }
+  .familyPhoto,
+  .familyPhoto > img {
+    min-height: 460px;
+    height: 460px;
+  }
+}
+@media (max-width: 750px) {
+  .familyStory {
+    grid-template-columns: 1fr;
+    gap: 40px;
+    padding-top: 70px;
+    padding-bottom: 70px;
+  }
+  .familyPhoto,
+  .familyPhoto > img {
+    min-height: 360px;
+    height: 360px;
+  }
+  .familyStory h2 {
+    letter-spacing: -2px;
+  }
+  .familyStory p {
+    font-size: 14px;
+  }
+  .appTour {
+    border-radius: 30px;
+    padding-top: 65px;
+    padding-bottom: 65px;
+  }
+  .tourHeading {
+    margin-bottom: 35px;
+  }
+  .tourHeading h2 {
+    letter-spacing: -2px;
+  }
+  .tourGrid {
+    grid-template-columns: 1fr;
+    gap: 35px;
+  }
+  .tourPreview {
+    position: static;
+  }
+  .tourPhone {
+    width: 240px;
+  }
+  .tourCaption {
+    min-height: 0;
+    margin-top: 25px;
+  }
+  .tourFeatures {
+    grid-template-columns: 1fr;
+  }
+  .tourFeatures > button {
+    min-height: 0;
+    padding: 22px;
+  }
+  .tourFeatures > button > b {
+    font-size: 18px;
+    max-width: 90%;
+  }
+  .tourFeatures > button p {
+    font-size: 13px;
+  }
+  .samucaStory {
+    grid-template-columns: 1fr;
+    gap: 30px;
+    margin-top: 60px;
+    padding-top: 55px;
+    padding-bottom: 65px;
+    border-radius: 30px;
+  }
+  .samucaArt {
+    min-height: 340px;
+  }
+  .samucaArt > img {
+    max-width: 280px;
+  }
+  .samucaArt > span {
+    right: 10px;
+    bottom: 0;
+    font-size: 10px;
+    padding: 15px 22px;
+  }
+  .samucaArt b {
+    font-size: 20px;
+  }
+  .samucaCopy h2 {
+    letter-spacing: -2px;
+  }
+  .samucaCopy p {
+    font-size: 13px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .samucaArt > img {
+    animation: none;
+  }
+  .tourPhone,
+  .tourFeatures > button {
+    transition: none;
+  }
+}
+.tourPreview {
+  scroll-margin-top: 115px;
+}
+@media (min-width: 751px) and (max-height: 850px) {
+  .tourPhone {
+    width: 210px;
+    border-width: 6px;
+    border-radius: 30px;
+  }
+  .tourCaption {
+    margin-top: 18px;
+    min-height: 0;
+  }
+  .tourCaption p {
+    font-size: 12px;
+  }
+}

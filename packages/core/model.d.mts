@@ -59,6 +59,56 @@ export interface LearningActivity {
   status: string;
   updatedAt: string;
 }
+export interface AssignmentSubmission {
+  childId: string;
+  actorId: string;
+  note: string;
+  attachment: Attachment | null;
+  submittedAt: string;
+  feedback?: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+}
+export interface Assignment {
+  id: string;
+  kind: "homework" | "project" | "exam";
+  title: string;
+  description: string;
+  syllabus: string;
+  due: string;
+  time: string;
+  childIds: string[];
+  authorId: string;
+  attachment: Attachment | null;
+  createdAt: string;
+  submissions: AssignmentSubmission[];
+}
+export interface RequestType {
+  id: string;
+  name: string;
+  description: string;
+  attachmentRequired: boolean;
+  active: boolean;
+}
+export interface OnlineRequest {
+  id: string;
+  protocol: string;
+  childId: string;
+  actorId: string;
+  requestTypeId: string;
+  typeName: string;
+  attachmentRequired: boolean;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: {
+    id: string;
+    senderId: string;
+    body: string;
+    attachment: Attachment | null;
+    at: string;
+  }[];
+}
 export interface Routine {
   id: string;
   childId: string;
@@ -164,10 +214,40 @@ export function upgradeStore<
 >(
   state: T,
 ): T & {
+  assignments: Assignment[];
+  requests: OnlineRequest[];
+  assistantThreads: AssistantThread[];
+  knowledge: KnowledgeEntry[];
+  requestTypes: RequestType[];
   posts: MuralPost[];
   attendance: Attendance[];
   activities: LearningActivity[];
 };
+export interface AssistantThread {
+  id: string;
+  actorId: string;
+  childId: string;
+  question: string;
+  status: string;
+  department: string | null;
+  createdAt: string;
+  updatedAt: string;
+  tool: string;
+  repliedBy?: string;
+  sources: { kind: string; id: string; label: string }[];
+  messages: { id: string; senderId: string; body: string; at: string }[];
+}
+export interface KnowledgeEntry {
+  id: string;
+  question: string;
+  answer: string;
+  active: boolean;
+  unitIds: string[];
+  classIds: string[];
+  expiresAt: string;
+  reviewedBy: string;
+  reviewedAt: string;
+}
 export interface Store {
   version: number;
   school: { id: string; name: string };
@@ -182,6 +262,11 @@ export interface Store {
   messages: Message[];
   invoices: Invoice[];
   events: SchoolEvent[];
+  assignments: Assignment[];
+  requests: OnlineRequest[];
+  assistantThreads: AssistantThread[];
+  knowledge: KnowledgeEntry[];
+  requestTypes: RequestType[];
   posts: MuralPost[];
   auditAccessRoles: string[];
   audit: AuditEntry[];

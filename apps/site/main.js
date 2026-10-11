@@ -1,3 +1,5 @@
+const classroomUrl = new URL("./assets/classroom.png", import.meta.url).href;
+const familyUrl = new URL("./assets/family.png", import.meta.url).href;
 const atelierUrl = new URL("./assets/atelier.png", import.meta.url).href;
 const childUrl = new URL("./assets/lia.png", import.meta.url).href;
 document.documentElement.classList.add("js");
@@ -53,7 +55,7 @@ const personas = {
     strip: "Lia e Bento",
     stripSub: "Todos os filhos · Escola Semente",
     card: "Cada descoberta.<br>Mais perto.",
-    body: "Hoje foi dia de criar com argila. Uma nova história para compartilhar.",
+    body: "Hoje foi dia de explorar cores e formas. Uma nova história para compartilhar.",
     rows: [
       ["Rotina do dia", "Acompanhar ↗"],
       ["Comunicados", "2 novidades"],
@@ -130,7 +132,7 @@ function persona(key) {
   document.querySelector("#product-badge").textContent = p.badge;
   document.querySelector("#product-badge-sub").textContent = p.badgeSub;
   document.querySelector("#phone-content").innerHTML =
-    `<div class="phoneBody"><h4>${p.heading}</h4><div class="childStrip"><img src="${childUrl}" alt="Foto ilustrativa de uma criança"><div><b>${p.strip}</b><small>${p.stripSub}</small></div></div><div class="phoneCard"><small>${key === "teacher" ? "ATUALIZAÇÕES GERAIS" : "ESCOLA E FAMÍLIA"}</small><b>${p.card}</b><img src="${atelierUrl}" alt="Atividade ilustrativa na escola"><p>${p.body}</p></div><div class="phoneRows">${p.rows.map((r) => `<div><span>${r[0]}</span><strong>${r[1]}</strong></div>`).join("")}</div></div>`;
+    `<div class="phoneBody"><h4>${p.heading}</h4><div class="childStrip"><img src="${childUrl}" alt="Foto ilustrativa de uma criança"><div><b>${p.strip}</b><small>${p.stripSub}</small></div></div><div class="phoneCard"><small>${key === "teacher" ? "ATUALIZAÇÕES GERAIS" : "ESCOLA E FAMÍLIA"}</small><b>${p.card}</b><img src="${key === "school" ? familyUrl : classroomUrl}" alt="Atividade ilustrativa na escola"><p>${p.body}</p></div><div class="phoneRows">${p.rows.map((r) => `<div><span>${r[0]}</span><strong>${r[1]}</strong></div>`).join("")}</div></div>`;
 }
 document.querySelectorAll("[data-persona]").forEach((b) => {
   b.addEventListener("click", () => persona(b.dataset.persona));
@@ -232,4 +234,85 @@ document.querySelector("#contact-form").addEventListener("submit", (e) => {
   document.querySelector("#contact-status").textContent =
     "Pedido pronto. Abra seu e-mail para revisar e enviar para pablo.carvalho@thinksystems.com.br.";
   link.focus();
+});
+
+const tourScreens = {
+  day: [
+    new URL("./assets/screens/day.jpg", import.meta.url).href,
+    "O dia do seu filho, com contexto.",
+    "Alimentação, descanso, presença e observações publicadas pela escola, numa sequência fácil de acompanhar.",
+  ],
+  photos: [
+    new URL("./assets/screens/photos.jpg", import.meta.url).href,
+    "Cada foto abre uma conversa.",
+    "Veja o momento compartilhado pela professora e converse com seu filho sobre as descobertas da turma.",
+  ],
+  calendar: [
+    new URL("./assets/screens/calendar.jpg", import.meta.url).href,
+    "Datas com o contexto certo.",
+    "Cada criança mantém sua agenda. Provas e entregas ficam destacadas; as orientações abrem a partir da data.",
+  ],
+  homework: [
+    new URL("./assets/screens/homework.jpg", import.meta.url).href,
+    "Clareza para ajudar em casa.",
+    "Prazo, orientação, conteúdo programático e registro da entrega. Ative um lembrete local no aplicativo instalado.",
+  ],
+  requests: [
+    new URL("./assets/screens/requests.jpg", import.meta.url).href,
+    "A secretaria, mais acessível.",
+    "Tipos definidos pela escola, anexo quando necessário e conversa organizada por protocolo.",
+  ],
+  finance: [
+    new URL("./assets/screens/finance.jpg", import.meta.url).href,
+    "Todos os filhos. Um financeiro.",
+    "Uma visão conjunta de valores e vencimentos. A integração de pagamento será ativada pela escola.",
+  ],
+  wall: [
+    new URL("./assets/screens/wall.jpg", import.meta.url).href,
+    "Materiais que ficam à mão.",
+    "Recados, vídeos e arquivos têm seu lugar, para consultar novamente sem procurar em conversas espalhadas.",
+  ],
+  samuca: [
+    new URL("./assets/screens/samuca.jpg", import.meta.url).href,
+    "Oi, eu sou o Samuca!",
+    "Consultas com fontes e encaminhamento à equipe quando falta informação. Respostas gerais dependem da revisão da escola.",
+  ],
+};
+const tourTabs = [...document.querySelectorAll("[data-tour]")];
+function selectTour(button) {
+  const [src, title, caption] = tourScreens[button.dataset.tour];
+  tourTabs.forEach((t) => {
+    t.setAttribute("aria-selected", String(t === button));
+    t.tabIndex = t === button ? 0 : -1;
+  });
+  document.querySelector("#tour-screen").src = src;
+  document.querySelector("#tour-screen").alt =
+    "Tela real de demonstração: " + title;
+  document.querySelector("#tour-title").textContent = title;
+  document.querySelector("#tour-caption").textContent = caption;
+  document
+    .querySelector("#tour-panel")
+    .setAttribute("aria-labelledby", button.id);
+}
+tourTabs.forEach((b, i) => {
+  b.addEventListener("click", () => {
+    selectTour(b);
+    if (innerWidth <= 750)
+      document.querySelector(".tourPreview").scrollIntoView({
+        behavior: reduced ? "instant" : "smooth",
+        block: "start",
+      });
+  });
+  b.addEventListener("keydown", (e) => {
+    let n;
+    if (e.key === "ArrowDown") n = (i + 1) % tourTabs.length;
+    else if (e.key === "ArrowUp")
+      n = (i - 1 + tourTabs.length) % tourTabs.length;
+    else if (e.key === "Home") n = 0;
+    else if (e.key === "End") n = tourTabs.length - 1;
+    else return;
+    e.preventDefault();
+    tourTabs[n].focus();
+    selectTour(tourTabs[n]);
+  });
 });

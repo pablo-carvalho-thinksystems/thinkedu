@@ -2,25 +2,30 @@
   "expo": {
     "name": "thinkEdu",
     "slug": "thinkedu",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "scheme": "thinkedu",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.thinksystems.thinkedu",
-      "buildNumber": "1"
+      "buildNumber": "2"
     },
     "android": {
       "package": "com.thinksystems.thinkedu",
-      "versionCode": 1
+      "versionCode": 2
     },
     "web": {
       "bundler": "metro",
       "name": "thinkEdu · ThinkSystems",
       "favicon": "./assets/thinkedu-icon.png"
     },
-    "plugins": ["expo-sharing", "expo-video"],
+    "plugins": [
+      "expo-sharing",
+      "expo-video",
+      "expo-notifications",
+      "./plugins/withLocalNotifications.cjs"
+    ],
     "icon": "./assets/thinkedu-icon.png"
   }
 }

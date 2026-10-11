@@ -23,6 +23,11 @@ function emptyState(actor: Actor): VisibleStore {
     "children",
     "routines",
     "attendance",
+    "assignments",
+    "requests",
+    "assistantThreads",
+    "knowledge",
+    "requestTypes",
     "activities",
     "notices",
     "messages",
@@ -48,6 +53,7 @@ export function useSchool(authSession?: { token: string; actor: Actor }) {
     [error, setError] = useState("");
   const token = useRef(""),
     locking = useRef(false);
+  const revision = useRef(0);
   const actor = base
     ? remote?.currentActor || sessionActor
     : effectiveActor(
@@ -144,9 +150,26 @@ export function useSchool(authSession?: { token: string; actor: Actor }) {
       subscription.remove();
     };
   }, [actorId, ready]);
+  async function refreshState() {
+    if (!base || !ready || locking.current) return;
+    const currentToken = token.current;
+    const currentRevision = revision.current;
+    try {
+      const next = await request("/state");
+      if (
+        token.current === currentToken &&
+        currentRevision === revision.current &&
+        !locking.current
+      )
+        setRemote(next);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
   async function dispatch(command: Command) {
     if (locking.current || !ready) return false;
     locking.current = true;
+    revision.current++;
     setBusy(true);
     setError("");
     try {
@@ -228,6 +251,7 @@ export function useSchool(authSession?: { token: string; actor: Actor }) {
       setReady(false);
     },
     loadAudit,
+    refreshState,
     data: base
       ? remote || emptyState(sessionActor)
       : visibleState(store, actor),

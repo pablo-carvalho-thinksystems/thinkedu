@@ -1,3 +1,8 @@
+import {
+  prepareAssistantAnswer,
+  assistantFingerprint,
+} from "./samuca-provider.mjs";
+import { handleSchoolMcp } from "./mcp.mjs";
 import { createServer } from "node:http";
 import { authenticate } from "./auth.mjs";
 import { readFile, mkdir, writeFile, rename } from "node:fs/promises";
@@ -124,6 +129,7 @@ const server = createServer(async (req, res) => {
       "/commands",
       "/audit",
       "/session/logout",
+      "/mcp",
     ].includes(route)
       ? route
       : "/unknown",
@@ -162,7 +168,7 @@ const server = createServer(async (req, res) => {
         ...headers,
         "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
         "Access-Control-Allow-Headers":
-          "Authorization,Content-Type,X-ThinkEdu-Client",
+          "Authorization,Content-Type,X-ThinkEdu-Client,MCP-Protocol-Version",
       });
       return res.end();
     }
@@ -191,7 +197,10 @@ const server = createServer(async (req, res) => {
       let input = "";
       for await (const chunk of req) {
         input += chunk;
-        if (Buffer.byteLength(input) > 32000) {
+        if (
+          Buffer.byteLength(input) >
+          (route === "/commands" ? 8 * 1024 * 1024 : 32000)
+        ) {
           const e = Error("Solicitação muito grande.");
           e.status = 413;
           throw e;
@@ -300,6 +309,84 @@ const server = createServer(async (req, res) => {
       e.status = 401;
       throw e;
     }
+    if (route === "/mcp" && req.method === "POST") {
+      await log(actor, "mcp.request", context, {
+        metadata: { method: String(body.method || "").slice(0, 80) },
+      });
+      for (const [name, value] of Object.entries(headers))
+        res.setHeader(name, value);
+      logged = true;
+      return await handleSchoolMcp(
+        req,
+        res,
+        body,
+        (tool, args, read) =>
+          serial(async () => {
+            const current = state.actors.find((a) => a.id === session.actorId);
+            if (
+              !current ||
+              current.active === false ||
+              session.expires < Date.now()
+            )
+              throw Error("Sessão expirada.");
+            try {
+              const result = read(visibleState(state, current));
+              await persist(
+                record(structuredClone(state), current, "mcp.read", context, {
+                  metadata: { tool, args },
+                }),
+              );
+              return result;
+            } catch (e) {
+              await persist(
+                record(structuredClone(state), current, "mcp.read", context, {
+                  outcome: "denied",
+                  error: e.message,
+                  metadata: { tool },
+                }),
+              );
+              throw e;
+            }
+          }),
+        (command) =>
+          serial(async () => {
+            const current = state.actors.find((a) => a.id === session.actorId);
+            if (
+              !current ||
+              current.active === false ||
+              session.expires < Date.now()
+            )
+              throw Error("Sessão expirada.");
+            let next;
+            try {
+              next = applyCommand(state, current, command);
+            } catch (e) {
+              await persist(
+                record(
+                  structuredClone(state),
+                  current,
+                  "request.rejected",
+                  context,
+                  {
+                    outcome: "denied",
+                    error: e.message,
+                    metadata: { commandType: command.type },
+                  },
+                ),
+              );
+              throw e;
+            }
+            Object.assign(next.audit.at(-1), {
+              source: "mcp",
+              requestId: context.requestId,
+              method: context.method,
+              path: "/mcp",
+            });
+            await persist(next);
+            return visibleState(state, current);
+          }),
+      );
+    }
     if (route === "/session/logout" && req.method === "POST") {
       action = "session.logout";
       await log(actor, action, context);
@@ -324,6 +411,9 @@ const server = createServer(async (req, res) => {
             "children",
             "attendance",
             "routines",
+            "assignments",
+            "requests",
+            "requestTypes",
             "activities",
             "notices",
             "posts",
@@ -453,10 +543,42 @@ const server = createServer(async (req, res) => {
       return send(200, result);
     }
     if (route === "/commands" && req.method === "POST") {
+      let prepared = null;
+      if (body.type === "assistant.ask") {
+        const current = state.actors.find((a) => a.id === session.actorId);
+        const recent = state.assistantThreads.filter(
+          (t) =>
+            t.actorId === current.id &&
+            Date.now() - new Date(t.createdAt).getTime() < 60000,
+        ).length;
+        if (recent >= 10) {
+          const e = Error("Aguarde um minuto antes de enviar novas perguntas.");
+          e.status = 429;
+          throw e;
+        }
+        prepared = await prepareAssistantAnswer(
+          visibleState(state, current),
+          body,
+          new Date().toISOString(),
+        );
+      }
       const result = await serial(async () => {
         try {
           const current = state.actors.find((a) => a.id === session.actorId);
-          const next = applyCommand(state, current, body);
+          const currentView = visibleState(state, current);
+          const trustedAnswer =
+            prepared &&
+            prepared.fingerprint === assistantFingerprint(currentView)
+              ? prepared.answer
+              : undefined;
+          const next = applyCommand(
+            state,
+            current,
+            body,
+            undefined,
+            undefined,
+            { assistantAnswer: trustedAnswer },
+          );
           const entry = next.audit.at(-1);
           Object.assign(entry, {
             source: context.source,

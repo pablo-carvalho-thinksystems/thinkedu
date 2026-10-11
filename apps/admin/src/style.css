@@ -1320,7 +1320,12 @@ legend {
   min-width: 0;
   flex: 1;
 }
-.unitCaption { font-size: 9px; font-weight: 700; letter-spacing: 1.3px; color: #80500b; }
+.unitCaption {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.3px;
+  color: #80500b;
+}
 .unitFilter select {
   width: 100%;
   max-width: 380px;
@@ -1334,17 +1339,51 @@ legend {
   color: #60400f;
   cursor: pointer;
 }
-.unitFilter select:focus-visible { outline: 3px solid #a9661240; outline-offset: 3px; }
-.unitContextSummary { display: flex; flex-direction: column; gap: 7px; max-width: 42%; }
-.unitContextSummary strong { font-size: 13px; color: #725013; }
-.unitContextSummary strong span { padding: 0 5px; color: #b5904d; }
-.unitContextSummary > span { font-size: 11px; color: #806c48; line-height: 1.5; overflow-wrap: anywhere; }
+.unitFilter select:focus-visible {
+  outline: 3px solid #a9661240;
+  outline-offset: 3px;
+}
+.unitContextSummary {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-width: 42%;
+}
+.unitContextSummary strong {
+  font-size: 13px;
+  color: #725013;
+}
+.unitContextSummary strong span {
+  padding: 0 5px;
+  color: #b5904d;
+}
+.unitContextSummary > span {
+  font-size: 11px;
+  color: #806c48;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
 @media (max-width: 700px) {
-  .unitContext { flex-wrap: wrap; gap: 12px; padding: 16px; }
-  .unitContextSummary { max-width: 100%; width: 100%; padding-left: 56px; }
-  .unitFilter select { font-size: 15px; }
-  .demoProfile { margin-left: 0; max-width: 100%; }
-  .demoProfile select { max-width: 100%; }
+  .unitContext {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 16px;
+  }
+  .unitContextSummary {
+    max-width: 100%;
+    width: 100%;
+    padding-left: 56px;
+  }
+  .unitFilter select {
+    font-size: 15px;
+  }
+  .demoProfile {
+    margin-left: 0;
+    max-width: 100%;
+  }
+  .demoProfile select {
+    max-width: 100%;
+  }
 }
 .pagination {
   display: flex;
@@ -1481,4 +1520,156 @@ legend {
 .bigFlower.decorSymbol {
   width: 74px;
   height: 74px;
+}
+
+.serviceDesk {
+  margin-top: 20px;
+}
+.serviceToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 22px;
+}
+.serviceToolbar p {
+  font-size: 12px;
+  color: var(--muted);
+}
+.serviceToolbar label {
+  min-width: 180px;
+}
+.serviceForm {
+  padding: 28px;
+}
+.serviceForm > small {
+  display: block;
+  margin-top: 18px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.serviceForm h2 {
+  font-size: 23px;
+  margin: 16px 0;
+}
+.serviceForm h3 {
+  font-size: 14px;
+  margin-top: 25px;
+}
+.serviceForm p {
+  font-size: 12px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  color: var(--muted);
+}
+.serviceForm form {
+  display: grid;
+  gap: 18px;
+  margin-top: 24px;
+}
+.serviceForm textarea {
+  min-height: 105px;
+}
+.serviceCard {
+  text-align: left;
+  cursor: pointer;
+  padding: 25px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: transform 0.2s;
+}
+.serviceCard:hover {
+  transform: translateY(-3px);
+}
+.serviceCard small {
+  font-size: 10px;
+  color: var(--blue);
+}
+.serviceCard h2 {
+  font-size: 21px;
+  margin: 0;
+}
+.serviceCard p {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.serviceCard strong,
+.serviceCard > span {
+  font-size: 11px;
+}
+.serviceCard > span {
+  margin-top: auto;
+  color: var(--blue);
+}
+.serviceType {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  text-align: left;
+  padding: 16px;
+  margin-top: 12px;
+  background: #f8faff;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.serviceType strong {
+  font-size: 13px;
+}
+.serviceType span,
+.serviceType small {
+  font-size: 10px;
+  color: var(--muted);
+}
+.serviceThread {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 18px;
+  margin-top: 15px;
+}
+.serviceThread strong {
+  font-size: 11px;
+}
+.serviceThread a {
+  font-size: 11px;
+  color: var(--blue);
+}
+@media (max-width: 700px) {
+  .serviceToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .serviceForm {
+    padding: 18px;
+  }
+  .serviceCard {
+    padding: 20px;
+  }
+}
+/* Keep every management area reachable on smaller desktop windows. */
+@media (min-width: 761px) {
+  .sidebar {
+    overflow: hidden;
+  }
+  .sidebar nav {
+    min-height: 120px;
+    overflow-y: auto;
+    flex: 1;
+    flex-shrink: 1;
+    scrollbar-width: thin;
+  }
+  .sidebar nav button {
+    flex-shrink: 0;
+  }
+  .sidebarBottom {
+    flex-shrink: 0;
+    padding-top: 14px;
+  }
+  @media (max-height: 850px) {
+    .sidebarNote {
+      display: none;
+    }
+  }
 }

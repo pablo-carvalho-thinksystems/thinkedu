@@ -11,6 +11,18 @@ const privateKeys = new Set([
   "credentials",
 ]);
 export const auditLabels = {
+  "mcp.request": "Requisição ao MCP recebida",
+  "assistant.ask": "Samuca consultado",
+  "assistant.reply": "Escola respondeu ao Samuca",
+  "knowledge.save": "Conhecimento revisado e publicado",
+  "mcp.read": "Consulta autenticada via MCP",
+  "assignment.create": "Atividade com prazo publicada",
+  "assignment.submit": "Entrega registrada",
+  "assignment.feedback": "Retorno da atividade registrado",
+  "requestType.save": "Tipo de solicitação configurado",
+  "request.create": "Solicitação online aberta",
+  "request.reply": "Resposta da solicitação registrada",
+  "request.status": "Status da solicitação alterado",
   "unit.create": "Unidade cadastrada",
   "unit.update": "Unidade atualizada",
   "class.create": "Turma cadastrada",
@@ -39,6 +51,11 @@ export const auditLabels = {
   "request.rejected": "Solicitação recusada",
 };
 export const collectionLabels = {
+  assistantThreads: "Conversas com Samuca",
+  knowledge: "Conhecimento aprovado",
+  assignments: "Atividades e entregas",
+  requestTypes: "Tipos de solicitação",
+  requests: "Solicitações online",
   units: "Unidades",
   classes: "Turmas",
   children: "Alunos",
@@ -54,6 +71,8 @@ export const collectionLabels = {
   auditAccessRoles: "Permissões de auditoria",
 };
 export function safeSnapshot(value) {
+  if (typeof value === "string" && value.startsWith("data:"))
+    return "[Conteúdo do anexo omitido; metadados preservados]";
   if (Array.isArray(value)) return value.map(safeSnapshot);
   if (value && typeof value === "object")
     return Object.fromEntries(

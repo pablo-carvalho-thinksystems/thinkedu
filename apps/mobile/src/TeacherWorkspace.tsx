@@ -47,6 +47,7 @@ interface Props {
   onChat: (child: Child) => void;
   onCompose: (child?: Child) => void;
   onMural: () => void;
+  onAssignments: () => void;
   onClassUpdate: () => void;
   onClassMessage: () => void;
   onMaterials: () => void;
@@ -346,6 +347,19 @@ export function TeacherWorkspace(p: Props) {
         </View>
         {showClass && classPicker}
         {datePicker}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Atividades e entregas da turma"
+          onPress={p.onAssignments}
+          style={[s.quick, { backgroundColor: C.sky, marginBottom: 16 }]}
+        >
+          <Label bold size={15}>
+            Atividades e entregas da turma ↗
+          </Label>
+          <Label size={12} color={C.muted}>
+            Para casa, trabalhos, provas e retornos às famílias.
+          </Label>
+        </Pressable>
       </>
     );
   }

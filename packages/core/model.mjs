@@ -1,3 +1,9 @@
+import { applyAssistant } from "./assistant.mjs";
+import {
+  seedAssignments,
+  seedRequestTypes,
+  applySchoolwork,
+} from "./schoolwork.mjs";
 import { populateSchoolScenario } from "./scenario.mjs";
 import { makeAuditEntry, stateChanges } from "./audit.mjs";
 import {
@@ -231,6 +237,11 @@ export function createSeed() {
         tone: "sky",
       },
     ],
+    assignments: seedAssignments(),
+    requestTypes: seedRequestTypes(),
+    requests: [],
+    assistantThreads: [],
+    knowledge: [],
     posts: seedPosts(),
     auditAccessRoles: [],
     audit: [],
@@ -292,6 +303,11 @@ export function upgradeStore(state) {
   ];
   return {
     ...state,
+    assignments: state.assignments || seedAssignments(),
+    requestTypes: state.requestTypes || seedRequestTypes(),
+    requests: state.requests || [],
+    assistantThreads: state.assistantThreads || [],
+    knowledge: state.knowledge || [],
     units,
     classes,
     children: state.children.map((c) => ({
@@ -350,6 +366,28 @@ export function visibleState(state, actor) {
   return {
     ...rest,
     currentActor: actor,
+    assistantThreads: !can(actor, "assistant.read")
+      ? []
+      : state.assistantThreads.filter(
+          (t) =>
+            ids.has(t.childId) &&
+            !(
+              actor.role === "family" &&
+              !can(actor, "finance.read") &&
+              t.sources.some((s) => s.kind === "invoice")
+            ) &&
+            (actor.role === "family"
+              ? t.actorId === actor.id
+              : ["administrator", "director", "admin"].includes(actor.role) ||
+                t.department === actor.role),
+        ),
+    knowledge: state.knowledge.filter(
+      (k) =>
+        (can(actor, "knowledge.manage") || k.active) &&
+        (!k.unitIds.length || k.unitIds.some((u) => allowedUnitIds.has(u))) &&
+        (!k.classIds.length ||
+          children.some((c) => k.classIds.includes(c.classId))),
+    ),
     units: allowedUnits,
     classes: state.classes.filter(
       (g) =>
@@ -363,6 +401,25 @@ export function visibleState(state, actor) {
     children: can(actor, "attendance.read")
       ? children
       : children.map((c) => ({ ...c, arrival: "—" })),
+    assignments: !can(actor, "assignments.read")
+      ? []
+      : state.assignments
+          .filter((w) => w.childIds.some((id) => ids.has(id)))
+          .map((w) => ({
+            ...w,
+            childIds: w.childIds.filter((id) => ids.has(id)),
+            submissions: w.submissions.filter((s) => ids.has(s.childId)),
+          })),
+    requestTypes: can(actor, "requests.read")
+      ? state.requestTypes.filter((t) => actor.role !== "family" || t.active)
+      : [],
+    requests: !can(actor, "requests.read")
+      ? []
+      : state.requests.filter(
+          (r) =>
+            ids.has(r.childId) &&
+            (actor.role !== "family" || r.actorId === actor.id),
+        ),
     attendance: can(actor, "attendance.read")
       ? state.attendance.filter((a) => ids.has(a.childId))
       : [],
@@ -495,6 +552,16 @@ export function applyCommand(
       fail("Seu perfil não tem permissão para esta ação.", 403);
   };
   const permissions = {
+    "assistant.ask": "assistant.ask",
+    "assistant.reply": "assistant.manage",
+    "knowledge.save": "knowledge.manage",
+    "assignment.create": "assignments.write",
+    "assignment.submit": "assignments.submit",
+    "assignment.feedback": "assignments.write",
+    "requestType.save": "requests.configure",
+    "request.create": "requests.create",
+    "request.reply": "requests.read",
+    "request.status": "requests.manage",
     "unit.create": "units.manage",
     "unit.update": "units.manage",
     "class.create": "units.manage",
@@ -983,7 +1050,32 @@ export function applyCommand(
       noticeId: null,
       tone: "sky",
     });
-  } else fail("Ação não disponível.");
+  } else if (
+    !applyAssistant(
+      next,
+      actor,
+      command,
+      now,
+      id,
+      requireChild,
+      text,
+      fail,
+      visibleState(next, actor),
+      options.assistantAnswer,
+    ) &&
+    !applySchoolwork(
+      next,
+      actor,
+      command,
+      now,
+      id,
+      requireChild,
+      text,
+      validDate,
+      fail,
+    )
+  )
+    fail("Ação não disponível.");
   const changes = stateChanges(upgradeStore(state), next);
   const primary = {
     student: "children",

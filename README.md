@@ -119,3 +119,31 @@ Diretoria, Coordenação, Professores, Financeiro e Secretaria compartilham as r
 ## Unidades, volume e auditoria
 
 [Cadastro de unidades e cenário com 320 alunos](docs/unidades-e-volume.md). [Rastreabilidade e concessão de auditoria pela Administração](docs/auditoria.md). Com a API demonstrativa iniciada, `npm run demo:populate` reproduz o cenário de 20 turmas de 16 alunos.
+
+## Atividades e solicitações online · versão 0.2.0
+
+O app oferece **Atividades e entregas** para para casa, trabalhos e provas, por aluno/turma, com prazos, orientação, conteúdo programático, anexos e retorno do professor. A agenda destaca essas datas e abre os detalhes. O responsável pode ativar um lembrete local no celular; tocar no lembrete abre a atividade autorizada. Esta versão não envia push remoto. O projeto iOS mantém somente lembretes locais porque o time Apple atual não oferece a capacidade de push.
+
+**Solicitações online** reúne tipo, aluno, anexo, protocolo, status e conversa. A escola configura os tipos e decide se o anexo é obrigatório; a API também valida essa exigência. PDF, PNG, JPEG, TXT e DOCX até 5 MB são embutidos no armazenamento demonstrativo. Em produção, substituir isso por armazenamento privado com URLs temporárias e verificação dos arquivos.
+
+## Samuca · assistente dos responsáveis
+
+A tela do Samuca consulta o financeiro conjunto, rotinas publicadas, atividades/provas e orientações gerais revisadas. As respostas mostram fontes; falta de evento no calendário nunca confirma ausência de aula. Dúvidas sem resposta abrem uma conversa privada na caixa do setor adequado: professor, Coordenação, Financeiro, Secretaria ou Diretoria. Professores só atendem seus alunos vinculados. A direção pode acompanhar todos os setores autorizados.
+
+A escola responde no administrativo ou no app da equipe. O responsável vê o retorno na mesma conversa, atualizada enquanto essa área está aberta e ao retomar o app. Não há entrega por e-mail, WhatsApp ou push remoto nesta versão. Respostas particulares **não viram aprendizado automático**. Diretoria, Administração e Coordenação podem revisar e publicar uma orientação geral, com unidade, turma e validade; a busca ignora orientações expiradas/desativadas.
+
+O motor local funciona sem credenciais externas. A base usa **busca textual**, sem embeddings nesta etapa. Há um adaptador da OpenAI Responses API para roteamento semântico e geração fundamentada nas fontes recuperadas. Ative apenas no servidor com `THINKEDU_AI_ENABLED=true`, `THINKEDU_AI_MODEL` e `OPENAI_API_KEY`. Sem essas configurações, não ocorre transmissão ao provedor. A conexão foi testada com respostas simuladas; a validação com modelo real permanece pendente. Falhas do provedor preservam a consulta local ou o encaminhamento à escola. O servidor limita perguntas e descarta uma resposta preparada se os dados/permissões mudarem antes de salvar.
+
+O MCP oficial está em `POST /mcp`, com o **Bearer da sessão do responsável** e Streamable HTTP stateless. Ferramentas: `family_invoices`, `student_calendar`, `student_assignments`, `student_routine`, `school_knowledge` e `ask_samuca`. Cada consulta recalcula os vínculos na API e registra auditoria. O endpoint não é público/anônimo e não implementa OAuth para conexão automática de serviços externos.
+
+Referências de implementação: [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk), [function calling](https://developers.openai.com/api/docs/guides/function-calling) e [saídas estruturadas](https://developers.openai.com/api/docs/guides/structured-outputs).
+
+## Login e ativação
+
+O app instalado abre a tela de login e não permite trocar livremente de perfil. `POST /auth/login` verifica e-mail/senha com hash scrypt e sessão com expiração. Configure `THINKEDU_AUTH_FILE` com contas `{email, actorId, salt, passwordHash}`; `passwordHash` é o resultado hexadecimal de `scryptSync(password, salt, 64)`, com salt aleatório por conta. Não versionar esse arquivo. Convites, recuperação de senha e persistência segura da sessão ainda precisam ser implementados para o piloto. O iPhone atual foi compilado com a API pública não configurada: contas e endpoint HTTPS devem ser ativados para utilizar os dados reais.
+
+## Landing comercial
+
+`npm run dev:site` abre a landing local na porta 4343. `npm run build:site` gera os arquivos estáticos; o build principal também inclui o site. O tour mostra oito capturas reais do app com dados fictícios, junto de fotografias ilustrativas diferentes e o personagem Samuca. O contato prepara um e-mail para `pablo.carvalho@thinksystems.com.br`, para revisão e envio pelo visitante. Não há hospedagem pública nem envio automático do formulário nesta entrega.
+
+A revisão de dependências atualizou o SDK MCP para a série corrigida 1.32. Ainda existem alertas transitivos no ecossistema Expo/Metro; não aplicar o downgrade incompatível sugerido por `npm audit fix --force`. Revisar essas dependências e o restante dos limites de segurança antes de expor serviços de produção.

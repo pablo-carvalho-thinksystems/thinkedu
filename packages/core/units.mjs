@@ -11,18 +11,33 @@ export function filterUnitView(view, unitId = "all") {
     classes,
     units: view.units.filter((u) => u.id === unitId),
   };
-  for (const key of ["attendance", "routines", "messages", "invoices"])
+  for (const key of [
+    "attendance",
+    "routines",
+    "messages",
+    "invoices",
+    "requests",
+    "assistantThreads",
+  ])
     result[key] = view[key].filter((r) => ids.has(r.childId));
-  for (const key of ["activities", "notices", "posts", "events"])
+  for (const key of ["activities", "notices", "posts", "events", "assignments"])
     result[key] = view[key]
       .filter((r) => r.childIds.some((id) => ids.has(id)))
       .map((r) => ({
         ...r,
         childIds: r.childIds.filter((id) => ids.has(id)),
+        ...(key === "assignments"
+          ? { submissions: r.submissions.filter((a) => ids.has(a.childId)) }
+          : {}),
         ...(key === "notices"
           ? { responses: r.responses.filter((a) => ids.has(a.childId)) }
           : {}),
       }));
+  result.knowledge = view.knowledge.filter(
+    (k) =>
+      (!k.unitIds.length || k.unitIds.includes(unitId)) &&
+      (!k.classIds.length || k.classIds.some((c) => classIds.has(c))),
+  );
   result.actors = view.actors.filter(
     (a) =>
       a.id === view.currentActor.id ||

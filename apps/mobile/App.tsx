@@ -1,3 +1,4 @@
+import { AssistantWorkspace } from "./src/AssistantWorkspace";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -41,10 +42,17 @@ import { VersionNotice } from "./src/VersionNotice";
 import { TeacherWorkspace, type TeacherPage } from "./src/TeacherWorkspace";
 import { attendanceLabel } from "../../packages/core/teacher.mjs";
 import { Child, useSchool } from "./src/session";
+import {
+  SchoolworkWorkspace,
+  clearWorkReminders,
+} from "./src/SchoolworkWorkspace";
 import { LoginScreen, type LoginSession } from "./src/LoginScreen";
 
 type IconName = React.ComponentProps<typeof Feather>["name"];
 type Page =
+  | "assistant"
+  | "assignments"
+  | "requests"
   | "audit"
   | TeacherPage
   | "home"
@@ -405,6 +413,8 @@ function SchoolApp({
 }) {
   const school = useSchool(authSession),
     { actor, busy, dispatch } = school;
+  const [workId, setWorkId] = useState("");
+  const [calendarDay, setCalendarDay] = useState("");
   const [unitId, setUnitId] = useState("all");
   const data = filterUnitView(
     school.data,
@@ -480,11 +490,34 @@ function SchoolApp({
           );
   const attendanceRecord = (id: string, date = DEMO_DATE) =>
     data.attendance.find((a) => a.childId === id && a.date === date);
-  const agendaEvents = family
+  const baseAgendaEvents = family
     ? eventsForChild(data.events, currentAgendaId())
     : data.events.filter((e) =>
         e.childIds.some((id) => scope.some((c) => c.id === id)),
       );
+  const agendaEvents = [
+    ...baseAgendaEvents.map((e) => ({ ...e, assignmentId: "" })),
+    ...data.assignments
+      .filter((w) =>
+        family
+          ? w.childIds.includes(currentAgendaId())
+          : w.childIds.some((id) => scope.some((c) => c.id === id)),
+      )
+      .map((w) => ({
+        id: `calendar-${w.id}`,
+        assignmentId: w.id,
+        title: w.title,
+        date: w.due,
+        time: w.time,
+        place: { homework: "Para casa", project: "Trabalho", exam: "Prova" }[
+          w.kind
+        ],
+        childIds: w.childIds,
+        noticeId: null,
+        tone:
+          w.kind === "exam" ? "lime" : w.kind === "project" ? "peach" : "sky",
+      })),
+  ];
   function currentAgendaId() {
     return selected?.id || children[0]?.id;
   }
@@ -621,6 +654,40 @@ function SchoolApp({
     setPage(next);
     setFilter("all");
   }
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    let active = true;
+    let listener: { remove: () => void } | undefined;
+    void import("expo-notifications")
+      .then(async (n) => {
+        if (!active) return;
+        const open = (
+          response: import("expo-notifications").NotificationResponse,
+        ) => {
+          const meta = response.notification.request.content.data;
+          if (
+            !active ||
+            meta.actorId !== actor.id ||
+            !data.assignments.some((w) => w.id === meta.assignmentId)
+          )
+            return;
+          setWorkId(String(meta.assignmentId));
+          setPage("assignments");
+          setHistory([]);
+        };
+        listener = n.addNotificationResponseReceivedListener(open);
+        const last = await n.getLastNotificationResponseAsync();
+        if (last) {
+          open(last);
+          await n.clearLastNotificationResponseAsync();
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+      listener?.remove();
+    };
+  }, [actor.id, data.assignments]);
   function back() {
     setPage(history.at(-1) || (family ? "home" : "classroom"));
     setHistory((h) => h.slice(0, -1));
@@ -858,6 +925,9 @@ function SchoolApp({
       inbox: "messages.read",
       chat: "messages.read",
       compose: "communication.write",
+      assistant: "assistant.read",
+      assignments: "assignments.read",
+      requests: "requests.read",
       muralCompose: "mural.write",
       finance: "finance.read",
       invoice: "finance.read",
@@ -904,11 +974,89 @@ function SchoolApp({
 
     if (page === "audit") return <AuditHistory load={school.loadAudit} />;
     switch (page) {
+      case "assistant":
+        return (
+          <AssistantWorkspace
+            data={data}
+            actor={actor}
+            busy={busy}
+            dispatch={dispatch}
+            onRefresh={school.refreshState}
+          />
+        );
+      case "assignments":
+      case "requests":
+        return (
+          <SchoolworkWorkspace
+            key={`${page}-${workId}`}
+            mode={page}
+            initialId={page === "assignments" ? workId : undefined}
+            initialClassId={teacherClassId}
+            data={data}
+            actor={actor}
+            busy={busy}
+            dispatch={dispatch}
+          />
+        );
+
       case "home":
         return (
           <>
             <Heading>Oi, {actor.name}!</Heading>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Conversar com Samuca"
+              onPress={() => go("assistant")}
+              style={{
+                backgroundColor: C.ink,
+                borderRadius: 24,
+                padding: 16,
+                marginBottom: 16,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              <Image
+                source={require("./assets/samuca.png")}
+                style={{ width: 72, height: 72 }}
+                resizeMode="contain"
+              />
+              <View style={{ flex: 1 }}>
+                <Copy bold size={18} color="white">
+                  Pergunte ao Samuca ↗
+                </Copy>
+                <Copy size={12} color="white">
+                  Rotina, provas, calendário e cobranças. Seu assistente, aqui
+                  pertinho.
+                </Copy>
+              </View>
+            </Pressable>
             {selector}
+            <Card tone="lime">
+              <Copy bold size={18}>
+                Atividades e entregas
+              </Copy>
+              <Copy size={12}>
+                Para casa, trabalhos e provas, com prazo e orientação do
+                professor.
+              </Copy>
+              <Button
+                icon="book-open"
+                onPress={() => {
+                  setWorkId("");
+                  go("assignments");
+                }}
+              >
+                Ver atividades e próximas datas
+              </Button>
+            </Card>
+            <Row
+              title="Solicitações online"
+              sub="Pedidos à escola, protocolos e respostas"
+              icon="file-text"
+              onPress={() => go("requests")}
+            />
             <Copy color={C.muted} size={12} style={{ marginBottom: 16 }}>
               Sexta, 9 de outubro · demonstração
             </Copy>
@@ -2000,6 +2148,24 @@ function SchoolApp({
         return (
           <>
             <Heading>Organize os{"\n"}próximos dias.</Heading>
+            <Button
+              outline
+              onPress={() => {
+                setWorkId("");
+                go("assignments");
+              }}
+            >
+              Para casa, trabalhos e provas
+            </Button>
+            <Copy size={11} color={C.muted}>
+              Toque nas datas destacadas para ver atividades, comentários e
+              conteúdo programático.
+            </Copy>
+            {!!calendarDay && (
+              <Button outline onPress={() => setCalendarDay("")}>
+                Mostrar todo o mês
+              </Button>
+            )}
             {family ? (
               <>
                 <Copy color={C.muted} style={{ marginBottom: 12 }}>
@@ -2087,27 +2253,44 @@ function SchoolApp({
                   ? `${calendar.year}-${String(calendar.month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`
                   : "";
                 const event = agendaEvents.some((e) => e.date === date);
+                const exam = agendaEvents.some(
+                  (e) =>
+                    e.date === date && e.assignmentId && e.place === "Prova",
+                );
                 return (
-                  <View key={i} style={s.calendarCell}>
+                  <Pressable
+                    key={i}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      d
+                        ? `Agenda de ${date}${event ? ", com atividades" : ""}`
+                        : "Dia vazio"
+                    }
+                    disabled={!d}
+                    onPress={() => setCalendarDay(date)}
+                    style={s.calendarCell}
+                  >
                     <View
                       style={[
                         s.calendarDay,
-                        event && { backgroundColor: C.blue },
+                        event && { backgroundColor: exam ? C.orange : C.blue },
                       ]}
                     >
                       <Copy size={12} color={event ? C.white : C.ink}>
                         {d || ""}
                       </Copy>
                     </View>
-                  </View>
+                  </Pressable>
                 );
               })}
             </View>
             {agendaEvents
-              .filter((e) =>
-                e.date.startsWith(
-                  `${calendar.year}-${String(calendar.month + 1).padStart(2, "0")}`,
-                ),
+              .filter(
+                (e) =>
+                  e.date.startsWith(
+                    `${calendar.year}-${String(calendar.month + 1).padStart(2, "0")}`,
+                  ) &&
+                  (!calendarDay || e.date === calendarDay),
               )
               .sort((a, b) => a.date.localeCompare(b.date))
               .map((e) => (
@@ -2127,6 +2310,17 @@ function SchoolApp({
                     {dateLabel(e.date)} · {e.time}
                   </Copy>
                   <Copy size={12}>{e.place}</Copy>
+                  {!!e.assignmentId && (
+                    <Button
+                      outline
+                      onPress={() => {
+                        setWorkId(e.assignmentId);
+                        go("assignments");
+                      }}
+                    >
+                      Ver orientações e conteúdo
+                    </Button>
+                  )}
                   {e.noticeId && (
                     <Button outline onPress={() => openNotice(e.noticeId!)}>
                       Ver comunicado
@@ -2230,6 +2424,10 @@ function SchoolApp({
             onCompose={(c) =>
               c ? composeForChild(c) : openCompose("update", "notice", true)
             }
+            onAssignments={() => {
+              setWorkId("");
+              go("assignments");
+            }}
             onClassUpdate={() => newPost(true)}
             onClassMessage={() => openCompose("update", "message", true)}
             onMural={() => {
@@ -2332,6 +2530,35 @@ function SchoolApp({
         return (
           <>
             <Heading>Perto das{"\n"}famílias.</Heading>
+            {can(actor, "assistant.read") && (
+              <Row
+                title={family ? "Conversar com Samuca" : "Caixa do Samuca"}
+                sub={
+                  family
+                    ? "Seu assistente para a vida escolar"
+                    : "Responder dúvidas dos responsáveis"
+                }
+                icon="message-circle"
+                onPress={() => go("assistant")}
+              />
+            )}
+            {can(actor, "requests.read") && (
+              <Row
+                title="Solicitações online"
+                sub="Acompanhar pedidos e atendimentos"
+                icon="file-text"
+                onPress={() => go("requests")}
+              />
+            )}
+            <Row
+              title="Atividades e entregas"
+              sub="Para casa, trabalhos e provas"
+              icon="book-open"
+              onPress={() => {
+                setWorkId("");
+                go("assignments");
+              }}
+            />
             {!family && (
               <Card tone="lime">
                 <Copy bold size={20}>
@@ -2936,6 +3163,7 @@ function SchoolApp({
                   accessibilityRole="button"
                   onPress={async () => {
                     try {
+                      await clearWorkReminders(actor.id);
                       await school.logout();
                     } finally {
                       onLogout();
