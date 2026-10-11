@@ -2986,6 +2986,12 @@ function SchoolApp({
             active: ["calendar", "notice"].includes(page),
           },
           {
+            label: "Samuca",
+            icon: "message-circle",
+            page: "assistant",
+            active: page === "assistant",
+          },
+          {
             label: "Escola",
             icon: "book-open",
             page: "notices",
@@ -3224,13 +3230,23 @@ function SchoolApp({
                         onPress={() => tab(t.page)}
                         style={[
                           s.navItem,
+                          t.page === "assistant" && { backgroundColor: "#F0F5D5" },
                           t.active && { backgroundColor: C.blue },
                         ]}
                       >
-                        <Icon
-                          name={t.icon}
-                          color={t.active ? C.white : C.ink}
-                        />
+                        {t.page === "assistant" ? (
+                          <Image
+                            source={require("./assets/samuca.png")}
+                            style={{ width: 28, height: 28 }}
+                            resizeMode="contain"
+                            accessible={false}
+                          />
+                        ) : (
+                          <Icon
+                            name={t.icon}
+                            color={t.active ? C.white : C.ink}
+                          />
+                        )}
                         <Copy size={10} bold color={t.active ? C.white : C.ink}>
                           {t.label}
                         </Copy>
