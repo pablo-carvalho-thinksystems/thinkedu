@@ -24,7 +24,8 @@
       "expo-sharing",
       "expo-video",
       "expo-notifications",
-      "./plugins/withLocalNotifications.cjs"
+      "./plugins/withLocalNotifications.cjs",
+      "expo-secure-store"
     ],
     "icon": "./assets/thinkedu-icon.png"
   }

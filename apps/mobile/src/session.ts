@@ -40,7 +40,10 @@ function emptyState(actor: Actor): VisibleStore {
   state.actors = [actor];
   return visibleState(state, actor);
 }
-export function useSchool(authSession?: { token: string; actor: Actor }) {
+export function useSchool(
+  authSession?: { token: string; actor: Actor },
+  onExpired?: () => void,
+) {
   const [store, setStore] = useState<Store>(createSeed),
     [remote, setRemote] = useState<VisibleStore | null>(null),
     [actorId, setActorId] = useState(authSession?.actor.id || "rafael"),
@@ -72,6 +75,7 @@ export function useSchool(authSession?: { token: string; actor: Actor }) {
     });
     const data = await response.json();
     if (!response.ok) {
+      if (response.status === 401 && authSession) onExpired?.();
       const e = Error(data.error || "Não foi possível concluir.") as Error & {
         status: number;
       };

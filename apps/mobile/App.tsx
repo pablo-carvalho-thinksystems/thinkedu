@@ -1,3 +1,4 @@
+import { readSession, saveSession, clearSession } from "./src/saved-session";
 import { AssistantWorkspace } from "./src/AssistantWorkspace";
 import React, { useEffect, useState } from "react";
 import {
@@ -411,7 +412,7 @@ function SchoolApp({
   authSession?: LoginSession;
   onLogout: () => void;
 }) {
-  const school = useSchool(authSession),
+  const school = useSchool(authSession, onLogout),
     { actor, busy, dispatch } = school;
   const [workId, setWorkId] = useState("");
   const [calendarDay, setCalendarDay] = useState("");
@@ -3230,7 +3231,9 @@ function SchoolApp({
                         onPress={() => tab(t.page)}
                         style={[
                           s.navItem,
-                          t.page === "assistant" && { backgroundColor: "#F0F5D5" },
+                          t.page === "assistant" && {
+                            backgroundColor: "#F0F5D5",
+                          },
                           t.active && { backgroundColor: C.blue },
                         ]}
                       >
@@ -3487,6 +3490,13 @@ function SchoolApp({
 export default function App() {
   const [authSession, setAuthSession] = useState<LoginSession | undefined>();
   const [preview, setPreview] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
+  useEffect(() => {
+    readSession()
+      .then(setAuthSession)
+      .catch(() => {})
+      .finally(() => setSessionReady(true));
+  }, []);
   const [loaded, error] = useFonts({
     JakartaRegular: PlusJakartaSans_400Regular,
     JakartaMedium: PlusJakartaSans_500Medium,
@@ -3496,18 +3506,22 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />
-      {loaded ? (
+      {loaded && sessionReady ? (
         authSession || preview ? (
           <SchoolApp
             authSession={authSession}
             onLogout={() => {
+              void clearSession();
               setAuthSession(undefined);
               setPreview(false);
             }}
           />
         ) : (
           <LoginScreen
-            onLogin={setAuthSession}
+            onLogin={(session) => {
+              void saveSession(session).catch(() => {});
+              setAuthSession(session);
+            }}
             onPreview={__DEV__ ? () => setPreview(true) : undefined}
           />
         )

@@ -1,3 +1,4 @@
+import { SessionStore } from "./session-store.mjs";
 import {
   prepareAssistantAnswer,
   assistantFingerprint,
@@ -65,7 +66,7 @@ if (freshKey) {
   }));
   sealAudit(state, auditKey);
 }
-const sessions = new Map();
+const sessions = new SessionStore(path + ".sessions.json");
 const loginAttempts = new Map();
 let queue = Promise.resolve();
 async function persist(next) {

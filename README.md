@@ -140,7 +140,7 @@ Referências de implementação: [MCP TypeScript SDK](https://github.com/modelco
 
 ## Login e ativação
 
-O app instalado abre a tela de login e não permite trocar livremente de perfil. `POST /auth/login` verifica e-mail/senha com hash scrypt e sessão com expiração. Configure `THINKEDU_AUTH_FILE` com contas `{email, actorId, salt, passwordHash}`; `passwordHash` é o resultado hexadecimal de `scryptSync(password, salt, 64)`, com salt aleatório por conta. Não versionar esse arquivo. Convites, recuperação de senha e persistência segura da sessão ainda precisam ser implementados para o piloto. O iPhone atual foi compilado com a API pública não configurada: contas e endpoint HTTPS devem ser ativados para utilizar os dados reais.
+O app instalado abre a tela de login e não permite trocar livremente de perfil. `POST /auth/login` verifica e-mail/senha com hash scrypt e sessão com expiração. Configure `THINKEDU_AUTH_FILE` com contas `{email, actorId, salt, passwordHash}`; `passwordHash` é o resultado hexadecimal de `scryptSync(password, salt, 64)`, com salt aleatório por conta. Não versionar esse arquivo. A sessão é salva no cofre nativo (SecureStore) do aparelho, vinculada ao endereço da API, sem guardar a senha. No servidor, os tokens são armazenados apenas como hashes em arquivo privado ignorado pelo Git; permanecem válidos por 30 dias sem uso, com renovação diária por atividade. Sair revoga a sessão. Acesso desativado ou sessão expirada exige novo login. Convites e recuperação de senha ainda precisam ser implementados para o piloto. O iPhone de teste utiliza atualmente a API do Mac na rede Wi-Fi local. Para uso fora dessa rede e com dados reais, configure uma API HTTPS hospedada e contas definitivas.
 
 ## Landing comercial
 
